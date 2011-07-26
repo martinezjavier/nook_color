@@ -1,0 +1,15 @@
+
+nook_color: Support files for nook_color development 
+
+About
+-----
+
+The Nook Color is an OMAP3621 based 7" tablet produced by Barnes and Noble as an lcd-based e-Reader. At the same time, it serves as quite a handy target for MeeGo due to the similar SoC. 
+
+A patch by Oleg Drokin that adds board file, serial console, gpio keys, MMC/SDCard and USB (peripheral) support has been accepted upstream. So Nook Color support is now available in the linux-omap-2.6 git tree and will be eventually pushed to linux-2.6. 
+
+Since the Linux kernel can be compiled for dozens of different processor architectures and sub-architectures, there are config files that includes the compilation options that differ from the default settings listed in the kconfig files.
+
+This project includes the defconfig file (provided by Oleg Drokin) for the Nook Color (Encore arch) and also other support files needed for its kernel development
+
+Bugs, comments or patches: martinez.javier@gmail.com
