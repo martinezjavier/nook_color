@@ -1,0 +1,278 @@
+From ae75f2afcf3b1c411381728a885f93b4e13bde2a Mon Sep 17 00:00:00 2001
+From: Javier Martinez Canillas <martinez.javier@gmail.com>
+Date: Mon, 8 Aug 2011 14:27:18 +0200
+Subject: [PATCH 1/8] mach-omap2: board-evt-peripherals: Add glue for driver Cypress CYTTSP touchscreen
+
+
+Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
+---
+ arch/arm/mach-omap2/board-evt-peripherals.c |  216 +++++++++++++++++++--------
+ 1 files changed, 153 insertions(+), 63 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/board-evt-peripherals.c b/arch/arm/mach-omap2/board-evt-peripherals.c
+index 5f507b1..dd8d313 100644
+--- a/arch/arm/mach-omap2/board-evt-peripherals.c
++++ b/arch/arm/mach-omap2/board-evt-peripherals.c
+@@ -38,7 +38,31 @@
+ #include "mmc-twl4030.h"
+ #include "mux.h"
+ #include "twl4030.h"
+-#include <linux/cyttsp.h>
++#include <linux/delay.h>
++#include <linux/input/cyttsp.h>
++char expansionboard_name[] = CY_I2C_NAME;
++
++#define CY_GEN3		3
++
++#define CY_SPI_VKEY_NAME "virtualkeys.cyttsp-spi" /* must match SPI name */
++#define CY_I2C_VKEY_NAME "virtualkeys.cyttsp-i2c" /* must match I2C name */
++#define CY_MAXX			600//1000
++#define CY_MAXY			(1024)//1000	/* leave room for vkeys */
++#define CY_VK_SZ_X		60
++#define CY_VK_SZ_Y		80
++#define CY_VK_CNTR_X1		(CY_VK_SZ_X*0)+(CY_VK_SZ_X/2)
++#define CY_VK_CNTR_X2		(CY_VK_SZ_X*1)+(CY_VK_SZ_X/2)
++#define CY_VK_CNTR_X3		(CY_VK_SZ_X*2)+(CY_VK_SZ_X/2)
++#define CY_VK_CNTR_X4		(CY_VK_SZ_X*3)+(CY_VK_SZ_X/2)
++#define CY_VK_CNTR_Y1		CY_MAXY+(CY_VK_SZ_Y/2)
++#define CY_VK_CNTR_Y2		CY_MAXY+(CY_VK_SZ_Y/2)
++#define CY_VK_CNTR_Y3		CY_MAXY+(CY_VK_SZ_Y/2)
++#define CY_VK_CNTR_Y4		CY_MAXY+(CY_VK_SZ_Y/2)
++
++#define CY_VK1_POS		":95:770:190:60"
++#define CY_VK2_POS 		":285:770:190:60"
++#define CY_VK3_POS		":475:770:190:60"
++#define CY_VK4_POS 		":665:770:190:60"
+ 
+ #include <linux/kxtf9.h>
+ #include <linux/max17042.h>
+@@ -55,75 +79,142 @@
+ 
+ #define MAX17042_GPIO_FOR_IRQ			100
+ 
++/*virtual key support */
++static ssize_t cyttsp_vkeys_show(struct kobject *kobj,
++                        struct kobj_attribute *attr, char *buf)
++{
++	return sprintf(buf,
++	__stringify(EV_KEY) ":" __stringify(KEY_BACK) CY_VK1_POS
++	":" __stringify(EV_KEY) ":" __stringify(KEY_MENU) CY_VK2_POS
++	":" __stringify(EV_KEY) ":" __stringify(KEY_HOME) CY_VK3_POS
++	":" __stringify(EV_KEY) ":" __stringify(KEY_SEARCH) CY_VK4_POS
++	"\n");
++}
+ 
+-extern void evt_lcd_panel_init(void);
++static struct kobj_attribute cyttsp_vkeys_attr = {
++        .attr = {
++                .mode = S_IRUGO,
++        },
++        .show = &cyttsp_vkeys_show,
++};
+ 
+-int has_3G_support(void)
++static struct attribute *cyttsp_properties_attrs[] = {
++        &cyttsp_vkeys_attr.attr,
++        NULL
++};
++
++static struct attribute_group cyttsp_properties_attr_group = {
++        .attrs = cyttsp_properties_attrs,
++};
++
++static int cyttsp_vkey_init(const char *name)
+ {
+-	return( (system_rev & BOARD_FEATURE_3G) != 0 );
++	struct kobject *properties_kobj;
++	int rc;
++	char buf[160];
++
++	printk("%s: init virtual keys\n", __func__);
++
++	cyttsp_vkeys_attr.attr.name = name;
++	properties_kobj = kobject_create_and_add("board_properties", NULL);
++	rc = 0;
++	if (properties_kobj)
++		rc = sysfs_create_group(properties_kobj,
++			&cyttsp_properties_attr_group);
++
++	if (!properties_kobj)
++		printk("%s: "
++			"setup cyttsp virtual keys fail nobj \n",
++			__func__);
++	if (rc)
++		printk("%s: "
++			"setup cyttsp virtual keys fail rc=%d \n",
++			__func__, rc);
++
++	if (!properties_kobj || rc)
++		printk("%s: failed to create board_properties\n",
++			__func__);
++	else {
++		printk("%s: "
++			"setup cyttsp virtual keys ok name=%s\n",
++			__func__, cyttsp_vkeys_attr.attr.name);
++		cyttsp_vkeys_show(properties_kobj, &cyttsp_vkeys_attr, buf);
++		printk("%s: " "%s""\n", __func__, buf);
++	}
++	return rc;
+ }
+ 
+-int has_1GHz_support(void)
++#define CY_I2C_IRQ_GPIO	OMAP_CYTTSP_GPIO
++#define CY_I2C_ADR	CYTTSP_I2C_SLAVEADDRESS
++
++static int cyttsp_i2c_init(void)
+ {
+-	return( (system_rev & BOARD_FEATURE_1GHz) != 0 );
++	int ret;
++
++	ret = cyttsp_vkey_init(CY_I2C_VKEY_NAME);
++
++	if (gpio_request(OMAP_CYTTSP_RESET_GPIO, "tma340_reset") < 0) {
++		printk(KERN_ERR "can't get tma340 xreset GPIO\n");
++		return -1;
++	}
++
++	if (gpio_request(OMAP_CYTTSP_GPIO, "cyttsp_touch") < 0) {
++		printk(KERN_ERR "can't get cyttsp interrupt GPIO\n");
++		return -1;
++	}
++
++	gpio_direction_input(OMAP_CYTTSP_GPIO);
++	omap_set_gpio_debounce(OMAP_CYTTSP_GPIO, 0);
++
++	mdelay(100);
++	printk("Reseting TMA340\n");
++	gpio_direction_output(OMAP_CYTTSP_RESET_GPIO, 0);
++	mdelay(10);
++	gpio_direction_output(OMAP_CYTTSP_RESET_GPIO, 1);
++	mdelay(100);
++
++	return 0;
+ }
+ 
+-int  cyttsp_dev_init(int resource)
++static int cyttsp_i2c_wakeup(void)
+ {
+-        if (resource)
+-        {
+-                if (gpio_request(OMAP_CYTTSP_RESET_GPIO, "tma340_reset") < 0) {
+-                        printk(KERN_ERR "can't get tma340 xreset GPIO\n");
+-                        return -1;
+-                }
+-
+-                if (gpio_request(OMAP_CYTTSP_GPIO, "cyttsp_touch") < 0) {
+-                        printk(KERN_ERR "can't get cyttsp interrupt GPIO\n");
+-                        return -1;
+-                }
+-
+-                gpio_direction_input(OMAP_CYTTSP_GPIO);
+-                omap_set_gpio_debounce(OMAP_CYTTSP_GPIO, 0);
+-        }
+-        else
+-        {
+-                gpio_free(OMAP_CYTTSP_GPIO);
+-                gpio_free(OMAP_CYTTSP_RESET_GPIO);
+-        }
+-    return 0;
++	return 0;
+ }
+ 
+-static struct cyttsp_platform_data cyttsp_platform_data = {
+-        .maxx = 480,
+-        .maxy = 800,
+-        .flags = 0,
+-        .gen = CY_GEN3,
+-        .use_st = CY_USE_ST,
+-        .use_mt = CY_USE_MT,
+-        .use_hndshk = CY_SEND_HNDSHK,
+-        .use_trk_id = CY_USE_TRACKING_ID,
+-        .use_sleep = CY_USE_SLEEP,
+-        .use_gestures = CY_USE_GESTURES,
+-        /* activate up to 4 groups
+-         * and set active distance
+-         */
+-        .gest_set = CY_GEST_GRP1 | CY_GEST_GRP2 |
+-                CY_GEST_GRP3 | CY_GEST_GRP4 |
+-                CY_ACT_DIST,
+-        /* change act_intrvl to customize the Active power state 
+-         * scanning/processing refresh interval for Operating mode
+-         */
+-        .act_intrvl = CY_ACT_INTRVL_DFLT,
+-        /* change tch_tmout to customize the touch timeout for the
+-         * Active power state for Operating mode
+-         */
+-        .tch_tmout = CY_TCH_TMOUT_DFLT,
+-        /* change lp_intrvl to customize the Low Power power state 
+-         * scanning/processing refresh interval for Operating mode
+-         */
+-        .lp_intrvl = CY_LP_INTRVL_DFLT,
++static struct cyttsp_platform_data cyttsp_i2c_platform_data = {
++	.wakeup = cyttsp_i2c_wakeup,
++	.init = cyttsp_i2c_init,
++	.maxx = CY_MAXX,
++	.maxy = CY_MAXY,
++	.use_hndshk = 0 /*CY_SEND_HNDSHK*/,
++	.use_sleep = 0 /*CY_USE_SLEEP*/,
++	/* change act_intrvl to customize the Active power state
++	 * scanning/processing refresh interval for Operating mode
++	 */
++	.act_intrvl = CY_ACT_INTRVL_DFLT,
++	/* change tch_tmout to customize the touch timeout for the
++	 * Active power state for Operating mode
++	 */
++	.tch_tmout = CY_TCH_TMOUT_DFLT,
++	/* change lp_intrvl to customize the Low Power power state
++	 * scanning/processing refresh interval for Operating mode
++	 */
++	.lp_intrvl = CY_LP_INTRVL_DFLT,
++	.name = CY_I2C_NAME,
++	.irq_gpio = CY_I2C_IRQ_GPIO,
+ };
+ 
++extern void evt_lcd_panel_init(void);
++
++int has_3G_support(void)
++{
++	return( (system_rev & BOARD_FEATURE_3G) != 0 );
++}
++
++int has_1GHz_support(void)
++{
++	return( (system_rev & BOARD_FEATURE_1GHz) != 0 );
++}
+ 
+ static void kxtf9_dev_init(void)
+ {
+@@ -447,7 +538,6 @@ static struct i2c_board_info __initdata evt_i2c_boardinfo[] = {
+ 		.platform_data = &kxtf9_platform_data_here,
+ 		.irq = OMAP_GPIO_IRQ(KXTF9_GPIO_FOR_IRQ),
+ 	},
+-
+ };
+ 
+ #define AUDIO_CODEC_IRQ_GPIO             59
+@@ -506,14 +596,14 @@ static void max17042_dev_init(void)
+ 
+ static struct i2c_board_info __initdata evt_i2c_bus2_info[] = {
+ 	{
+-		I2C_BOARD_INFO(CY_I2C_NAME, CYTTSP_I2C_SLAVEADDRESS),
+-		.platform_data = &cyttsp_platform_data,
+-		.irq = OMAP_GPIO_IRQ(OMAP_CYTTSP_GPIO),
+-	},
+-	{
+ 		I2C_BOARD_INFO(AIC3100_NAME,  AIC3100_I2CSLAVEADDRESS),
+                 .irq = OMAP_GPIO_IRQ(AUDIO_CODEC_IRQ_GPIO),
+ 	},
++	{
++		I2C_BOARD_INFO(CY_I2C_NAME, CYTTSP_I2C_SLAVEADDRESS),
++		.platform_data = &cyttsp_i2c_platform_data,
++		.irq = OMAP_GPIO_IRQ(OMAP_CYTTSP_GPIO),
++	},
+ };
+ 
+ static int __init omap_i2c_init(void)
+-- 
+1.7.4.1
+

@@ -1,0 +1,66 @@
+From a62964253a5385831f498156b82f723eec5b23e3 Mon Sep 17 00:00:00 2001
+From: Javier Martinez Canillas <martinez.javier@gmail.com>
+Date: Mon, 8 Aug 2011 14:47:12 +0200
+Subject: [PATCH 7/8] input: touchscreen: Add Cypress CYTTSP touchscreen driver to Kconfig and Makefile
+
+
+Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
+---
+ drivers/input/touchscreen/Kconfig  |   27 +++++++++++++++++++++++++++
+ drivers/input/touchscreen/Makefile |    4 +++-
+ 2 files changed, 30 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+index 75b3507..1b83a2d 100644
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -565,7 +565,34 @@ config TOUCHSCREEN_CYTTSP_I2C
+ 
+       If unsure, say N.
+ 
++config TOUCHSCREEN_CYTTSP_CORE
++        tristate "Cypress TTSP touchscreen core"
++        help
++          Always activated for Cypress TTSP touchscreen
+ 
++config TOUCHSCREEN_CYTTSP_I2C
++        tristate "Cypress TTSP i2c touchscreen"
++        depends on I2C && TOUCHSCREEN_CYTTSP_CORE
++        help
++          Say Y here if you have a Cypress TTSP touchscreen
++          connected to your system with an I2C interface.
++
++          If unsure, say N.
++
++          To compile this driver as a module, choose M here: the
++          module will be called cyttsp-i2c.
++
++config TOUCHSCREEN_CYTTSP_SPI
++        tristate "Cypress TTSP spi touchscreen"
++        depends on SPI_MASTER && TOUCHSCREEN_CYTTSP_CORE
++        help
++          Say Y here if you have a Cypress TTSP touchscreen
++          connected to your  with an SPI interface.
++
++          If unsure, say N.
++
++          To compile this driver as a module, choose M here: the
++          module will be called cyttsp-spi.
+ endif
+ 
+ 
+diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
+index 88d08ec..4f8b6c5 100644
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+@@ -45,4 +45,6 @@ obj-$(CONFIG_TOUCHSCREEN_WM97XX_ZYLONITE)	+= zylonite-wm97xx.o
+ obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
+ obj-$(CONFIG_TOUCHSCREEN_PCAP)		+= pcap_ts.o
+ obj-$(CONFIG_TOUCHSCREEN_SYNTM12XX)	+= syntm12xx.o
+-obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C)    += cyttsp-i2c.o
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_CORE)   += cyttsp_core.o
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C)    += cyttsp_i2c.o
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_SPI)    += cyttsp_spi.o
+-- 
+1.7.4.1
+
