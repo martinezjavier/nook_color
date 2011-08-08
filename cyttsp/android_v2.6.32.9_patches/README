@@ -1,1 +1,3 @@
-Patches to add support for Cypress (TTSP) touchscreen to Android v2.6.32.9 kernel
+Patches to replace Barnes & Nobles Nook Color specific Cypress's 
+TrueTouch(tm) Standard Product touchscreen driver for a generic 
+driver to Android v2.6.32.9 kernel
