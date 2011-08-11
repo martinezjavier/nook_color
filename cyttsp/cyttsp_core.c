@@ -30,6 +30,7 @@
 
 #include <linux/delay.h>
 #include <linux/input.h>
+#include <linux/input/mt.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
@@ -66,7 +67,7 @@
 
 struct cyttsp_tch {
 	__be16 x, y;
-	u8 z, unused;
+	u8 z;
 } __attribute__((packed));
 
 /* TrueTouch Standard Product Gen3 interface definition */
@@ -74,8 +75,14 @@ struct cyttsp_xydata {
 	u8 hst_mode;
 	u8 tt_mode;
 	u8 tt_stat;
-	struct cyttsp_tch tch[2];
-	u8 unused_grp[12];
+	struct cyttsp_tch tch1;
+	u8 touch12_id;
+	struct cyttsp_tch tch2;
+	u8 gest_cnt;
+	u8 gest_id;
+	struct cyttsp_tch tch3;
+	u8 touch34_id;
+	struct cyttsp_tch tch4;
 	u8 tt_undef[3];
 	u8 act_dist;
 	u8 tt_reserved;
@@ -137,6 +144,7 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
+	int slot[4];
 };
 
 static const u8 bl_command[] = {
@@ -470,6 +478,8 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		input_report_abs(ts->input, ABS_MT_POSITION_X, x);
 		input_report_abs(ts->input, ABS_MT_POSITION_Y, y);
 		input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR, z);
+		input_mt_slot(ts->dev, 0);
+                input_mt_report_slot_state(ts->dev,  MT_TOOL_FINGER, 1);
 		input_mt_sync(ts->input);
 	}
 
@@ -726,11 +736,15 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
 	__set_bit(EV_ABS, input_device->evbit);
 
 	input_set_abs_params(input_device, ABS_MT_POSITION_X,
-		0, ts->platform_data->maxx, 0, 0);
+			     0, ts->platform_data->maxx, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_POSITION_Y,
-		0, ts->platform_data->maxy, 0, 0);
+			     0, ts->platform_data->maxy, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
-		0, CY_MAXZ, 0, 0);
+			     0, CY_MAXZ, 0, 0);
+	input_set_abs_params(input_device, ABS_MT_SLOT, 0, 3,
+			     0, 0);
+	input_set_abs_params(input_device, ABS_MT_TRACKING_ID,
+			     0, 16, 0, 0);
 
 	if (input_register_device(input_device)) {
 		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
