@@ -1,0 +1,28 @@
+config TOUCHSCREEN_CYTTSP_CORE
+	tristate "Cypress TTSP touchscreen core"
+	help
+	  Always activated for Cypress TTSP touchscreen
+
+config TOUCHSCREEN_CYTTSP_I2C
+	tristate "Cypress TTSP i2c touchscreen"
+	depends on I2C && TOUCHSCREEN_CYTTSP_CORE
+	help
+	  Say Y here if you have a Cypress TTSP touchscreen
+	  connected to your system with an I2C interface.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cyttsp-i2c.
+
+config TOUCHSCREEN_CYTTSP_SPI
+	tristate "Cypress TTSP spi touchscreen"
+	depends on SPI_MASTER && TOUCHSCREEN_CYTTSP_CORE
+	help
+	  Say Y here if you have a Cypress TTSP touchscreen
+	  connected to your  with an SPI interface.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cyttsp-spi.
