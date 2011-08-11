@@ -30,7 +30,7 @@
 
 #include <linux/delay.h>
 #include <linux/input.h>
-#include <linux/input/mt.h>
+//#include <linux/input/mt.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
@@ -432,6 +432,9 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 	struct cyttsp_xydata xy_data;
 	u8 num_cur_tch;
 	int i;
+	int id[4];
+	struct cyttsp_tch *tch = NULL;
+	int x, y, z;
 
 	/* Get touch data from CYTTSP device */
 	if (ttsp_read_block_data(ts,
@@ -469,18 +472,47 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		dev_dbg(ts->dev, "%s: Invalid buffer detected\n", __func__);
 	}
 
-	for (i = 0; i < num_cur_tch; i++) {
-		struct cyttsp_tch *tch = &xy_data.tch[i];
-		int x = be16_to_cpu(tch->x);
-		int y = be16_to_cpu(tch->y);
-		int z = tch->z;
+	id[0] = xy_data.touch12_id >> 4;
+	id[1] = xy_data.touch12_id & 0xF;
+	id[2] = xy_data.touch34_id >> 4;
+	id[3] = xy_data.touch34_id & 0xF;
 
-		input_report_abs(ts->input, ABS_MT_POSITION_X, x);
-		input_report_abs(ts->input, ABS_MT_POSITION_Y, y);
-		input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR, z);
-		input_mt_slot(ts->dev, 0);
-                input_mt_report_slot_state(ts->dev,  MT_TOOL_FINGER, 1);
-		input_mt_sync(ts->input);
+	printk("TTSP Worker entered touches=%d\n", num_cur_tch);
+
+	printk("TTSP id[0]=%d id[1]=%d id[2]=%d id[3]=%d\n", id[0], id[1], id[2], id[3]);
+
+	for (i = 0; i < 4; i++) {
+
+		ts->slot[i] = id[i];
+
+		switch(i) {
+		case 0:
+			tch = &xy_data.tch1;
+			break;
+		case 1:
+			tch = &xy_data.tch2;
+			break;
+		case 2:
+			tch = &xy_data.tch3;
+			break;
+		case 3:
+			tch = &xy_data.tch4;
+			break;
+		}
+
+		if(id[i] != 15) {
+
+			x = be16_to_cpu(tch->x);
+			y = be16_to_cpu(tch->y);
+			z = tch->z;
+
+			printk("TTSP i=%d x=%d y=%d z=%d\n", i, x, y, z);
+
+			input_report_abs(ts->input, ABS_MT_POSITION_X, x);
+			input_report_abs(ts->input, ABS_MT_POSITION_Y, y);
+			input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR, z);
+			input_mt_sync(ts->input);
+		}
 	}
 
 	if (!num_cur_tch)
@@ -741,10 +773,11 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
 			     0, ts->platform_data->maxy, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
 			     0, CY_MAXZ, 0, 0);
-	input_set_abs_params(input_device, ABS_MT_SLOT, 0, 3,
+/*	input_set_abs_params(input_device, ABS_MT_SLOT, 0, 3,
 			     0, 0);
 	input_set_abs_params(input_device, ABS_MT_TRACKING_ID,
 			     0, 16, 0, 0);
+*/
 
 	if (input_register_device(input_device)) {
 		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
