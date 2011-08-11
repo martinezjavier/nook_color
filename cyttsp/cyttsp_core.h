@@ -32,6 +32,7 @@
 
 #include <linux/kernel.h>
 #include <linux/err.h>
+#include <linux/module.h>
 #include <linux/input/cyttsp.h>
 
 #define CY_NUM_RETRY                4 /* max number of retries for read ops */
