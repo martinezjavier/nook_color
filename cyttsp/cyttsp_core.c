@@ -6,7 +6,10 @@
  * CY8CTST341
  * CY8CTMA340
  *
+ * Added multi-touch protocol type B support by Javier Martinez Canillas
+ *
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
+ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -30,7 +33,7 @@
 
 #include <linux/delay.h>
 #include <linux/input.h>
-//#include <linux/input/mt.h>
+#include <linux/input/mt.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
@@ -64,6 +67,10 @@
 #define CY_SOFT_RESET_MODE          0x01 /* return to Bootloader mode */
 #define CY_DEEP_SLEEP_MODE          0x02
 #define CY_LOW_POWER_MODE           0x04
+
+/* Slots management */
+#define CY_MAX_FINGER               4
+#define CY_SLOT_UNUSED              0
 
 struct cyttsp_tch {
 	__be16 x, y;
@@ -144,7 +151,9 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
-	int slot[4];
+	int slot_cnt;
+	int slots[CY_MAX_FINGER];
+	int slot_status[CY_MAX_FINGER];
 };
 
 static const u8 bl_command[] = {
@@ -427,12 +436,79 @@ static int cyttsp_hndshk(struct cyttsp *ts, u8 hst_mode)
 	return retval;
 }
 
+static void cyttsp_report_slot(struct input_dev *dev, int slot, int x, int y, int z)
+{
+	input_mt_slot(dev, slot);
+	input_mt_report_slot_state(dev, MT_TOOL_FINGER, true);
+	input_report_abs(dev, ABS_MT_POSITION_X, x);
+	input_report_abs(dev, ABS_MT_POSITION_Y, y);
+	input_report_abs(dev, ABS_MT_TOUCH_MAJOR, z);
+}
+
+static void cyttsp_report_slot_empty(struct input_dev *dev, int slot)
+{
+	input_mt_slot(dev, slot);
+	input_mt_report_slot_state(dev, MT_TOOL_FINGER, false);
+}
+
+static void cyttsp_extract_track_ids(struct cyttsp_xydata *xy_data, int *ids)
+{
+	ids[0] = xy_data->touch12_id >> 4;
+	ids[1] = xy_data->touch12_id & 0xF;
+	ids[2] = xy_data->touch34_id >> 4;
+	ids[3] = xy_data->touch34_id & 0xF;
+}
+
+static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx, struct cyttsp_tch **tch)
+{
+	switch(idx) {
+	case 0:
+		*tch = &xy_data->tch1;
+		break;
+	case 1:
+		*tch = &xy_data->tch2;
+		break;
+	case 2:
+		*tch = &xy_data->tch3;
+		break;
+	case 3:
+		*tch = &xy_data->tch4;
+		break;
+	}
+}
+
+static int cyttsp_get_slot_id(struct cyttsp *ts, int id)
+{
+	int i;
+
+	for (i = 0; i < CY_MAX_FINGER; i++)
+		if (ts->slots[i] == id)
+			return i;
+
+	return -1;
+}
+
+static int cyttsp_assign_next_slot(struct cyttsp *ts, int id)
+{
+	int i;
+
+	for (i = 0; i < CY_MAX_FINGER; i++)
+		if (ts->slots[i] == CY_SLOT_UNUSED) {
+			ts->slots[i] = id;
+			ts->slot_cnt++;
+			return i;
+		}
+
+	return -1;
+}
+
 static int cyttsp_xy_worker(struct cyttsp *ts)
 {
 	struct cyttsp_xydata xy_data;
 	u8 num_cur_tch;
 	int i;
-	int id[4];
+	int ids[4];
+	int slot = -1;
 	struct cyttsp_tch *tch = NULL;
 	int x, y, z;
 
@@ -449,6 +525,21 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 	if (ts->platform_data->use_hndshk)
 		if (cyttsp_hndshk(ts, xy_data.hst_mode))
 			return 0;
+
+	/*
+	  Dump all the xy_data information, for debgging only
+
+	*/
+	/*{
+		int j;
+		u8 *dptr = (u8 *)(&xy_data);
+		static u8 buf[256];
+		memset (buf, 0, sizeof(buf));
+		for (j = 0; j < sizeof(struct cyttsp_xydata); j++)
+			sprintf(buf, "%s %02X", buf, dptr[j]);
+		pr_info("TTSP %s: xy[0..%d]=%s\n", __func__,
+			sizeof(struct cyttsp_xydata) - 1, buf);
+			}*/
 
 	/* determine number of currently active touches */
 	num_cur_tch = GET_NUM_TOUCHES(xy_data.tt_stat);
@@ -472,51 +563,35 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		dev_dbg(ts->dev, "%s: Invalid buffer detected\n", __func__);
 	}
 
-	id[0] = xy_data.touch12_id >> 4;
-	id[1] = xy_data.touch12_id & 0xF;
-	id[2] = xy_data.touch34_id >> 4;
-	id[3] = xy_data.touch34_id & 0xF;
+	cyttsp_extract_track_ids(&xy_data, ids);
 
-	printk("TTSP Worker entered touches=%d\n", num_cur_tch);
+	for (i = 0; i < CY_MAX_FINGER; i++)
+		ts->slot_status[i] = false;
 
-	printk("TTSP id[0]=%d id[1]=%d id[2]=%d id[3]=%d\n", id[0], id[1], id[2], id[3]);
+	for (i = 0; i < num_cur_tch; i++) {
+		slot = cyttsp_get_slot_id(ts, ids[i]);
 
-	for (i = 0; i < 4; i++) {
+		if (slot < 0)
+			slot = cyttsp_assign_next_slot(ts, ids[i]);
 
-		ts->slot[i] = id[i];
+		cyttsp_get_tch(&xy_data, i, &tch);
 
-		switch(i) {
-		case 0:
-			tch = &xy_data.tch1;
-			break;
-		case 1:
-			tch = &xy_data.tch2;
-			break;
-		case 2:
-			tch = &xy_data.tch3;
-			break;
-		case 3:
-			tch = &xy_data.tch4;
-			break;
-		}
+		x = be16_to_cpu(tch->x);
+		y = be16_to_cpu(tch->y);
+		z = tch->z;
 
-		if(id[i] != 15) {
+		cyttsp_report_slot(ts->input, slot, x, y, z);
 
-			x = be16_to_cpu(tch->x);
-			y = be16_to_cpu(tch->y);
-			z = tch->z;
-
-			printk("TTSP i=%d x=%d y=%d z=%d\n", i, x, y, z);
-
-			input_report_abs(ts->input, ABS_MT_POSITION_X, x);
-			input_report_abs(ts->input, ABS_MT_POSITION_Y, y);
-			input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR, z);
-			input_mt_sync(ts->input);
-		}
+		ts->slot_status[slot] = true;
 	}
 
-	if (!num_cur_tch)
-		input_mt_sync(ts->input);
+	for (i = 0; i < CY_MAX_FINGER; i++)
+		if(ts->slot_status[i] == false && ts->slots[i] != CY_SLOT_UNUSED) {
+			ts->slots[i] = CY_SLOT_UNUSED;
+			ts->slot_cnt--;
+			cyttsp_report_slot_empty(ts->input, i);
+		}
+
 	input_sync(ts->input);
 
 	return 0;
@@ -697,6 +772,7 @@ void cyttsp_core_release(void *handle)
 		input_unregister_device(ts->input);
 		if (ts->platform_data->exit)
 			ts->platform_data->exit();
+		input_mt_destroy_slots(ts->input);
 		kfree(ts);
 	}
 }
@@ -712,6 +788,7 @@ static void cyttsp_close(struct input_dev *dev)
 void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
 {
 	struct input_dev *input_device;
+	int i;
 
 	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
 
@@ -773,11 +850,13 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
 			     0, ts->platform_data->maxy, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
 			     0, CY_MAXZ, 0, 0);
-/*	input_set_abs_params(input_device, ABS_MT_SLOT, 0, 3,
-			     0, 0);
-	input_set_abs_params(input_device, ABS_MT_TRACKING_ID,
-			     0, 16, 0, 0);
-*/
+
+	input_mt_init_slots(input_device, CY_MAX_FINGER);
+
+	for (i = 0; i < CY_MAX_FINGER; i++)
+		ts->slots[i] = CY_SLOT_UNUSED;
+
+	ts->slot_cnt = 0;
 
 	if (input_register_device(input_device)) {
 		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
