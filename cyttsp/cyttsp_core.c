@@ -526,21 +526,6 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		if (cyttsp_hndshk(ts, xy_data.hst_mode))
 			return 0;
 
-	/*
-	  Dump all the xy_data information, for debgging only
-
-	*/
-	/*{
-		int j;
-		u8 *dptr = (u8 *)(&xy_data);
-		static u8 buf[256];
-		memset (buf, 0, sizeof(buf));
-		for (j = 0; j < sizeof(struct cyttsp_xydata); j++)
-			sprintf(buf, "%s %02X", buf, dptr[j]);
-		pr_info("TTSP %s: xy[0..%d]=%s\n", __func__,
-			sizeof(struct cyttsp_xydata) - 1, buf);
-			}*/
-
 	/* determine number of currently active touches */
 	num_cur_tch = GET_NUM_TOUCHES(xy_data.tt_stat);
 
