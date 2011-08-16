@@ -6,10 +6,10 @@
  * CY8CTST341
  * CY8CTMA340
  *
- * Added multi-touch protocol type B support by Javier Martinez Canillas
- *
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
  * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
+ *
+ * Added multi-touch protocol type B support by Javier Martinez Canillas
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -75,7 +75,7 @@
 struct cyttsp_tch {
 	__be16 x, y;
 	u8 z;
-} __attribute__((packed));
+} __packed;
 
 /* TrueTouch Standard Product Gen3 interface definition */
 struct cyttsp_xydata {
@@ -93,7 +93,7 @@ struct cyttsp_xydata {
 	u8 tt_undef[3];
 	u8 act_dist;
 	u8 tt_reserved;
-} __attribute__((packed));
+} __packed;
 
 /* TTSP System Information interface definition */
 struct cyttsp_sysinfo_data {
@@ -436,7 +436,8 @@ static int cyttsp_hndshk(struct cyttsp *ts, u8 hst_mode)
 	return retval;
 }
 
-static void cyttsp_report_slot(struct input_dev *dev, int slot, int x, int y, int z)
+static void cyttsp_report_slot(struct input_dev *dev, int slot,
+			       int x, int y, int z)
 {
 	input_mt_slot(dev, slot);
 	input_mt_report_slot_state(dev, MT_TOOL_FINGER, true);
@@ -459,9 +460,10 @@ static void cyttsp_extract_track_ids(struct cyttsp_xydata *xy_data, int *ids)
 	ids[3] = xy_data->touch34_id & 0xF;
 }
 
-static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx, struct cyttsp_tch **tch)
+static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
+			   struct cyttsp_tch **tch)
 {
-	switch(idx) {
+	switch (idx) {
 	case 0:
 		*tch = &xy_data->tch1;
 		break;
@@ -538,7 +540,7 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		/* terminate all active tracks */
 		num_cur_tch = 0;
 		dev_dbg(ts->dev, "%s: Large area detected\n", __func__);
-	} else if (num_cur_tch > 2) {
+	} else if (num_cur_tch > CY_MAX_FINGER) {
 		/* terminate all active tracks */
 		num_cur_tch = 0;
 		dev_dbg(ts->dev, "%s: Num touch error detected\n", __func__);
@@ -571,7 +573,8 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 	}
 
 	for (i = 0; i < CY_MAX_FINGER; i++)
-		if(ts->slot_status[i] == false && ts->slots[i] != CY_SLOT_UNUSED) {
+		if (ts->slot_status[i] == false &&
+		   ts->slots[i] != CY_SLOT_UNUSED) {
 			ts->slots[i] = CY_SLOT_UNUSED;
 			ts->slot_cnt--;
 			cyttsp_report_slot_empty(ts->input, i);
@@ -623,6 +626,7 @@ static irqreturn_t cyttsp_irq(int irq, void *handle)
 			cyttsp_pr_state(ts);
 		}
 	}
+
 	return IRQ_HANDLED;
 }
 
