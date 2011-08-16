@@ -1,13 +1,12 @@
---- a/cyttsp_core.c	2011-08-14 21:16:59.000000000 +0200
-+++ b/cyttsp_core.c	2011-08-15 09:37:29.000000000 +0200
-@@ -6,7 +6,10 @@
-  * CY8CTST341
+--- cyttsp_original/cyttsp_core.c	2011-08-16 02:42:06.000000000 +0200
++++ cyttsp/cyttsp_core.c	2011-08-16 02:34:33.000000000 +0200
+@@ -7,6 +7,9 @@
   * CY8CTMA340
   *
-+ * Added multi-touch protocol type B support by Javier Martinez Canillas
-+ *
   * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
 + * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
++ *
++ * Added multi-touch protocol type B support by Javier Martinez Canillas
   *
   * This program is free software; you can redistribute it and/or
   * modify it under the terms of the GNU General Public License
@@ -19,7 +18,7 @@
  #include <linux/gpio.h>
  #include <linux/interrupt.h>
  #include <linux/slab.h>
-@@ -64,9 +68,13 @@
+@@ -64,22 +68,32 @@
  #define CY_DEEP_SLEEP_MODE          0x02
  #define CY_LOW_POWER_MODE           0x04
  
@@ -30,11 +29,12 @@
  struct cyttsp_tch {
  	__be16 x, y;
 -	u8 z, unused;
+-} __attribute__((packed));
 +	u8 z;
- } __attribute__((packed));
++} __packed;
  
  /* TrueTouch Standard Product Gen3 interface definition */
-@@ -74,8 +82,14 @@
+ struct cyttsp_xydata {
  	u8 hst_mode;
  	u8 tt_mode;
  	u8 tt_stat;
@@ -51,6 +51,11 @@
  	u8 tt_undef[3];
  	u8 act_dist;
  	u8 tt_reserved;
+-} __attribute__((packed));
++} __packed;
+ 
+ /* TTSP System Information interface definition */
+ struct cyttsp_sysinfo_data {
 @@ -137,6 +151,9 @@
  	struct cyttsp_sysinfo_data sysinfo_data;
  	struct completion bl_ready;
@@ -61,11 +66,12 @@
  };
  
  static const u8 bl_command[] = {
-@@ -419,11 +436,81 @@
+@@ -419,11 +436,83 @@
  	return retval;
  }
  
-+static void cyttsp_report_slot(struct input_dev *dev, int slot, int x, int y, int z)
++static void cyttsp_report_slot(struct input_dev *dev, int slot,
++			       int x, int y, int z)
 +{
 +	input_mt_slot(dev, slot);
 +	input_mt_report_slot_state(dev, MT_TOOL_FINGER, true);
@@ -88,9 +94,10 @@
 +	ids[3] = xy_data->touch34_id & 0xF;
 +}
 +
-+static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx, struct cyttsp_tch **tch)
++static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
++			   struct cyttsp_tch **tch)
 +{
-+	switch(idx) {
++	switch (idx) {
 +	case 0:
 +		*tch = &xy_data->tch1;
 +		break;
@@ -143,7 +150,16 @@
  
  	/* Get touch data from CYTTSP device */
  	if (ttsp_read_block_data(ts,
-@@ -461,20 +548,35 @@
+@@ -451,7 +540,7 @@
+ 		/* terminate all active tracks */
+ 		num_cur_tch = 0;
+ 		dev_dbg(ts->dev, "%s: Large area detected\n", __func__);
+-	} else if (num_cur_tch > 2) {
++	} else if (num_cur_tch > CY_MAX_FINGER) {
+ 		/* terminate all active tracks */
+ 		num_cur_tch = 0;
+ 		dev_dbg(ts->dev, "%s: Num touch error detected\n", __func__);
+@@ -461,20 +550,36 @@
  		dev_dbg(ts->dev, "%s: Invalid buffer detected\n", __func__);
  	}
  
@@ -181,7 +197,8 @@
 -	if (!num_cur_tch)
 -		input_mt_sync(ts->input);
 +	for (i = 0; i < CY_MAX_FINGER; i++)
-+		if(ts->slot_status[i] == false && ts->slots[i] != CY_SLOT_UNUSED) {
++		if (ts->slot_status[i] == false &&
++		   ts->slots[i] != CY_SLOT_UNUSED) {
 +			ts->slots[i] = CY_SLOT_UNUSED;
 +			ts->slot_cnt--;
 +			cyttsp_report_slot_empty(ts->input, i);
@@ -190,7 +207,15 @@
  	input_sync(ts->input);
  
  	return 0;
-@@ -655,6 +757,7 @@
+@@ -521,6 +626,7 @@
+ 			cyttsp_pr_state(ts);
+ 		}
+ 	}
++
+ 	return IRQ_HANDLED;
+ }
+ 
+@@ -655,6 +761,7 @@
  		input_unregister_device(ts->input);
  		if (ts->platform_data->exit)
  			ts->platform_data->exit();
@@ -198,7 +223,7 @@
  		kfree(ts);
  	}
  }
-@@ -670,6 +773,7 @@
+@@ -670,6 +777,7 @@
  void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
  {
  	struct input_dev *input_device;
@@ -206,7 +231,7 @@
  
  	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
  
-@@ -726,11 +830,18 @@
+@@ -726,11 +834,18 @@
  	__set_bit(EV_ABS, input_device->evbit);
  
  	input_set_abs_params(input_device, ABS_MT_POSITION_X,
