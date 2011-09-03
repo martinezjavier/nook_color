@@ -101,6 +101,11 @@ static int cyttsp_spi_xfer_(u8 op, struct cyttsp_spi *ts,
 
 	memset((void *)xfer, 0, sizeof(xfer));
 	spi_message_init(&msg);
+
+	/*
+	   We set both TX and RX buffers because Cypress TTSP
+	   requires full duplex operation.
+	*/
 	xfer[0].tx_buf = wr_buf;
 	xfer[0].rx_buf = rd_buf;
 	if (op == CY_SPI_WR_OP) {
