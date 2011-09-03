@@ -42,40 +42,15 @@
 #define CY_SPI_BITS_PER_WORD 8
 
 struct cyttsp_spi {
-	struct cyttsp_bus_ops ops;
+	struct cyttsp_bus_ops bus_ops;
 	struct spi_device *spi_client;
 	void *ttsp_client;
 	u8 wr_buf[CY_SPI_DATA_BUF_SIZE];
 	u8 rd_buf[CY_SPI_DATA_BUF_SIZE];
 };
 
-static void spi_complete(void *arg)
-{
-	complete(arg);
-}
-
-static int spi_sync_tmo(struct cyttsp_spi *ts, struct spi_message *message)
-{
-	DECLARE_COMPLETION_ONSTACK(done);
-	int status;
-
-	message->complete = spi_complete;
-	message->context = &done;
-	status = spi_async(ts->spi_client, message);
-	if (status == 0) {
-		int ret = wait_for_completion_interruptible_timeout(&done, HZ);
-		if (!ret) {
-			dev_dbg(ts->ops.dev, "%s: timeout\n", __func__);
-			status = -EIO;
-		} else
-			status = message->status;
-	}
-	message->context = NULL;
-	return status;
-}
-
-static int cyttsp_spi_xfer_(u8 op, struct cyttsp_spi *ts,
-			    u8 reg, u8 *buf, int length)
+static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
+			   u8 reg, u8 *buf, int length)
 {
 	struct spi_message msg;
 	struct spi_transfer xfer[2];
@@ -84,7 +59,8 @@ static int cyttsp_spi_xfer_(u8 op, struct cyttsp_spi *ts,
 	int retval;
 
 	if (length > CY_SPI_DATA_SIZE) {
-		dev_dbg(ts->ops.dev, "%s: length %d is too big.\n",
+		dev_dbg(ts->bus_ops.dev,
+			"%s: length %d is too big.\n",
 			__func__, length);
 		return -EINVAL;
 	}
@@ -103,8 +79,8 @@ static int cyttsp_spi_xfer_(u8 op, struct cyttsp_spi *ts,
 	spi_message_init(&msg);
 
 	/*
-	   We set both TX and RX buffers because Cypress TTSP
-	   requires full duplex operation.
+	  We set both TX and RX buffers because Cypress TTSP
+	  requires full duplex operation.
 	*/
 	xfer[0].tx_buf = wr_buf;
 	xfer[0].rx_buf = rd_buf;
@@ -120,49 +96,35 @@ static int cyttsp_spi_xfer_(u8 op, struct cyttsp_spi *ts,
 		spi_message_add_tail(&xfer[1], &msg);
 	}
 
-	retval = spi_sync_tmo(ts, &msg);
+	retval = spi_sync(ts->spi_client, &msg);
 	if (retval < 0) {
-		dev_dbg(ts->ops.dev, "%s: spi sync error %d, len=%d, op=%d\n",
+		dev_dbg(ts->bus_ops.dev,
+			"%s: spi_sync() error %d, len=%d, op=%d\n",
 			__func__, retval, xfer[1].len, op);
+
+		/*
+		 * do not return here since was a bad ACK sequence
+		 * let the following ACK check handle any errors and
+		 * allow silent retries
+		 */
+	}
+
+	if ((rd_buf[CY_SPI_SYNC_BYTE] == CY_SPI_SYNC_ACK1) &&
+	    (rd_buf[CY_SPI_SYNC_BYTE+1] == CY_SPI_SYNC_ACK2))
 		retval = 0;
-	}
+	else {
+		int i;
+		for (i = 0; i < (CY_SPI_CMD_BYTES); i++)
+			dev_dbg(ts->bus_ops.dev,
+				"%s: test rd_buf[%d]:0x%02x\n",
+				__func__, i, rd_buf[i]);
+		for (i = 0; i < (length); i++)
+			dev_dbg(ts->bus_ops.dev,
+				"%s: test buf[%d]:0x%02x\n",
+				__func__, i, buf[i]);
 
-	if (op == CY_SPI_RD_OP) {
-		if ((rd_buf[CY_SPI_SYNC_BYTE] == CY_SPI_SYNC_ACK1) &&
-			(rd_buf[CY_SPI_SYNC_BYTE+1] == CY_SPI_SYNC_ACK2))
-			retval = 0;
-		else {
-			int i;
-			for (i = 0; i < (CY_SPI_CMD_BYTES); i++)
-				dev_dbg(ts->ops.dev,
-					"%s: test rd_buf[%d]:0x%02x\n",
-					__func__, i, rd_buf[i]);
-			for (i = 0; i < (length); i++)
-				dev_dbg(ts->ops.dev,
-					"%s: test buf[%d]:0x%02x\n",
-					__func__, i, buf[i]);
-			retval = 1;
-		}
-	}
-	return retval;
-}
-
-static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
-			    u8 reg, u8 *buf, int length)
-{
-	int tries;
-	int retval;
-
-	if (op == CY_SPI_RD_OP) {
-		for (tries = CY_NUM_RETRY; tries; tries--) {
-			retval = cyttsp_spi_xfer_(op, ts, reg, buf, length);
-			if (retval == 0)
-				break;
-			else
-				msleep(20);
-		}
-	} else {
-		retval = cyttsp_spi_xfer_(op, ts, reg, buf, length);
+		/* signal ACK error so silent retry */
+		retval = 1;
 	}
 
 	return retval;
@@ -171,13 +133,14 @@ static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
 static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
 				    u8 length, void *data)
 {
-	struct cyttsp_spi *ts = container_of(handle, struct cyttsp_spi, ops);
+	struct cyttsp_spi *ts =
+		container_of(handle, struct cyttsp_spi, bus_ops);
 	int retval;
 
 	retval = cyttsp_spi_xfer(CY_SPI_RD_OP, ts, addr, data, length);
 	if (retval < 0)
-		dev_dbg(ts->ops.dev,  "%s: ttsp_spi_read_block_data failed\n",
-			__func__);
+		pr_err("%s: ttsp_spi_read_block_data failed\n",
+                       __func__);
 
 	/*
 	 * Do not print the above error if the data sync bytes were not found.
@@ -185,7 +148,7 @@ static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
 	 * to retry until data sync bytes are found.
 	 */
 	if (retval > 0)
-		retval = -1;	/* now signal fail; so retry can be done */
+		retval = -EIO;  /* now signal fail; so retry can be done */
 
 	return retval;
 }
@@ -193,23 +156,29 @@ static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
 static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
 				     u8 length, const void *data)
 {
-	struct cyttsp_spi *ts = container_of(handle, struct cyttsp_spi, ops);
+	struct cyttsp_spi *ts =
+		container_of(handle, struct cyttsp_spi, bus_ops);
 	int retval;
 
 	retval = cyttsp_spi_xfer(CY_SPI_WR_OP, ts, addr, (void *)data, length);
 	if (retval < 0)
-		dev_dbg(ts->ops.dev, "%s: ttsp_spi_write_block_data failed\n",
-			__func__);
+		pr_err("%s: ttsp_spi_write_block_data failed\n",
+                       __func__);
 
-	if (retval == -EIO)
-		return 0;
-	else
-		return retval;
+	/*
+	 * Do not print the above error if the data sync bytes were not found.
+	 * This is a normal condition for the bootloader loader startup and need
+	 * to retry until data sync bytes are found.
+	 */
+	if (retval > 0)
+		retval = -EIO;  /* now signal fail; so retry can be done */
+
+	return retval;
 }
 
 static s32 ttsp_spi_tch_ext(void *handle, void *values)
 {
-	struct cyttsp_spi *ts = container_of(handle, struct cyttsp_spi, ops);
+	struct cyttsp_spi *ts = container_of(handle, struct cyttsp_spi, bus_ops);
 	int retval = 0;
 
 	/*
@@ -248,19 +217,19 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 
 	ts->spi_client = spi;
 	dev_set_drvdata(&spi->dev, ts);
-	ts->ops.write = ttsp_spi_write_block_data;
-	ts->ops.read = ttsp_spi_read_block_data;
-	ts->ops.ext = ttsp_spi_tch_ext;
-	ts->ops.dev = &spi->dev;
+	ts->bus_ops.write = ttsp_spi_write_block_data;
+	ts->bus_ops.read = ttsp_spi_read_block_data;
+	ts->bus_ops.ext = ttsp_spi_tch_ext;
+	ts->bus_ops.dev = &spi->dev;
 
-	ts->ttsp_client = cyttsp_core_init(&ts->ops, &spi->dev);
+	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev);
 	if (IS_ERR(ts->ttsp_client)) {
 		int retval = PTR_ERR(ts->ttsp_client);
 		kfree(ts);
 		return retval;
 	}
 
-	dev_dbg(ts->ops.dev, "%s: Registration complete\n", __func__);
+	dev_dbg(ts->bus_ops.dev, "%s: Registration complete\n", __func__);
 
 	return 0;
 }
