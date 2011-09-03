@@ -223,7 +223,7 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 	ts->bus_ops.ext = ttsp_spi_tch_ext;
 	ts->bus_ops.dev = &spi->dev;
 
-	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev);
+	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev, spi->irq);
 	if (IS_ERR(ts->ttsp_client)) {
 		int retval = PTR_ERR(ts->ttsp_client);
 		kfree(ts);
