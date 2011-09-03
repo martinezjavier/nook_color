@@ -779,7 +779,7 @@ static void cyttsp_close(struct input_dev *dev)
 	free_irq(ts->irq, ts);
 }
 
-void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
+void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq)
 {
 	struct input_dev *input_device;
 	int i;
@@ -809,7 +809,7 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev)
 		}
 	}
 
-	ts->irq = gpio_to_irq(ts->platform_data->irq_gpio);
+	ts->irq = irq;
 	if (ts->irq <= 0) {
 		dev_dbg(ts->dev, "%s: Error, failed to allocate irq\n",
 			__func__);
