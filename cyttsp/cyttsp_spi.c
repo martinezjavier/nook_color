@@ -140,7 +140,7 @@ static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
 	retval = cyttsp_spi_xfer(CY_SPI_RD_OP, ts, addr, data, length);
 	if (retval < 0)
 		pr_err("%s: ttsp_spi_read_block_data failed\n",
-                       __func__);
+		       __func__);
 
 	/*
 	 * Do not print the above error if the data sync bytes were not found.
@@ -163,7 +163,7 @@ static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
 	retval = cyttsp_spi_xfer(CY_SPI_WR_OP, ts, addr, (void *)data, length);
 	if (retval < 0)
 		pr_err("%s: ttsp_spi_write_block_data failed\n",
-                       __func__);
+		       __func__);
 
 	/*
 	 * Do not print the above error if the data sync bytes were not found.
@@ -178,7 +178,8 @@ static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
 
 static s32 ttsp_spi_tch_ext(void *handle, void *values)
 {
-	struct cyttsp_spi *ts = container_of(handle, struct cyttsp_spi, bus_ops);
+	struct cyttsp_spi *ts =
+		container_of(handle, struct cyttsp_spi, bus_ops);
 	int retval = 0;
 
 	/*
