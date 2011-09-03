@@ -110,7 +110,7 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 	ts->ops.dev = &client->dev;
 	ts->ops.dev->bus = &i2c_bus_type;
 
-	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev);
+	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev, client->irq);
 	if (IS_ERR(ts->ttsp_client)) {
 		int retval = PTR_ERR(ts->ttsp_client);
 		kfree(ts);
