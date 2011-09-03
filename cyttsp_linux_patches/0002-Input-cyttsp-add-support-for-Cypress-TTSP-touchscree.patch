@@ -1,7 +1,7 @@
-From e228c6e794d4059eb7dd5f2a3ca5a31760182ef9 Mon Sep 17 00:00:00 2001
+From e15f9860c388e920c57d6097f17a38be4ca03ccf Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Tue, 16 Aug 2011 01:50:20 +0200
-Subject: [PATCH 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+Date: Sat, 3 Sep 2011 06:57:06 +0200
+Subject: [PATCH V2 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -12,6 +12,9 @@ The original author of the driver is Kevin McNeely <kev@cypress.com>
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
+Changes since v1: Fix issues called out by Dmitry Torokhov
+	- Extract the IRQ from the i2c client data and pass to cyttsp_core_init
+
  drivers/input/touchscreen/cyttsp/Kconfig      |   12 ++
  drivers/input/touchscreen/cyttsp/Makefile     |    1 +
  drivers/input/touchscreen/cyttsp/cyttsp_i2c.c |  188 +++++++++++++++++++++++++
@@ -47,7 +50,7 @@ index d1b250f..9101dc9 100644
 +obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C)    += cyttsp_i2c.o
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
 new file mode 100644
-index 0000000..d79c6a7
+index 0000000..89d1fdf
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
 @@ -0,0 +1,188 @@
@@ -163,7 +166,7 @@ index 0000000..d79c6a7
 +	ts->ops.dev = &client->dev;
 +	ts->ops.dev->bus = &i2c_bus_type;
 +
-+	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev);
++	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev, client->irq);
 +	if (IS_ERR(ts->ttsp_client)) {
 +		int retval = PTR_ERR(ts->ttsp_client);
 +		kfree(ts);
