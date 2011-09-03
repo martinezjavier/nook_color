@@ -173,9 +173,12 @@ static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 		return -EINVAL;
 
 	for (tries = 0, retval = -1;
-		tries < CY_NUM_RETRY && (retval < 0);
-		tries++)
+	     tries < CY_NUM_RETRY && (retval < 0);
+	     tries++) {
 		retval = ts->bus_ops->read(ts->bus_ops, command, length, buf);
+		if (retval)
+			msleep(CY_DELAY_DFLT);
+	}
 
 	return retval;
 }
@@ -188,6 +191,8 @@ static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 		return -EINVAL;
 
 	retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
+	if (retval)
+		msleep(CY_DELAY_DFLT);
 
 	return retval;
 }
