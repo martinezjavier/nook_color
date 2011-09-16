@@ -70,7 +70,9 @@
 
 /* Slots management */
 #define CY_MAX_FINGER               4
-#define CY_SLOT_UNUSED              0
+#define CY_UNUSED                   0
+#define CY_USED                     1
+#define CY_MAX_ID                   15
 
 struct cyttsp_tch {
 	__be16 x, y;
@@ -151,9 +153,8 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
-	int slot_cnt;
-	int slots[CY_MAX_FINGER];
-	int slot_status[CY_MAX_FINGER];
+	int slot_curr[CY_MAX_ID];
+	int slot_prev[CY_MAX_ID];
 };
 
 static const u8 bl_command[] = {
@@ -484,38 +485,12 @@ static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
 	}
 }
 
-static int cyttsp_get_slot_id(struct cyttsp *ts, int id)
-{
-	int i;
-
-	for (i = 0; i < CY_MAX_FINGER; i++)
-		if (ts->slots[i] == id)
-			return i;
-
-	return -1;
-}
-
-static int cyttsp_assign_next_slot(struct cyttsp *ts, int id)
-{
-	int i;
-
-	for (i = 0; i < CY_MAX_FINGER; i++)
-		if (ts->slots[i] == CY_SLOT_UNUSED) {
-			ts->slots[i] = id;
-			ts->slot_cnt++;
-			return i;
-		}
-
-	return -1;
-}
-
 static int cyttsp_xy_worker(struct cyttsp *ts)
 {
 	struct cyttsp_xydata xy_data;
 	u8 num_cur_tch;
 	int i;
 	int ids[4];
-	int slot = -1;
 	struct cyttsp_tch *tch = NULL;
 	int x, y, z;
 
@@ -557,14 +532,8 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 
 	cyttsp_extract_track_ids(&xy_data, ids);
 
-	for (i = 0; i < CY_MAX_FINGER; i++)
-		ts->slot_status[i] = false;
-
 	for (i = 0; i < num_cur_tch; i++) {
-		slot = cyttsp_get_slot_id(ts, ids[i]);
-
-		if (slot < 0)
-			slot = cyttsp_assign_next_slot(ts, ids[i]);
+		ts->slot_curr[ids[i] - 1] = CY_USED;
 
 		cyttsp_get_tch(&xy_data, i, &tch);
 
@@ -572,18 +541,16 @@ static int cyttsp_xy_worker(struct cyttsp *ts)
 		y = be16_to_cpu(tch->y);
 		z = tch->z;
 
-		cyttsp_report_slot(ts->input, slot, x, y, z);
-
-		ts->slot_status[slot] = true;
+		cyttsp_report_slot(ts->input, ids[i] - 1, x, y, z);
 	}
 
-	for (i = 0; i < CY_MAX_FINGER; i++)
-		if (ts->slot_status[i] == false &&
-		   ts->slots[i] != CY_SLOT_UNUSED) {
-			ts->slots[i] = CY_SLOT_UNUSED;
-			ts->slot_cnt--;
+	for (i = 0; i < CY_MAX_ID; i++) {
+		if (ts->slot_prev[i] == CY_USED &&
+		    ts->slot_curr[i] == CY_UNUSED)
 			cyttsp_report_slot_empty(ts->input, i);
-		}
+		ts->slot_prev[i] = ts->slot_curr[i];
+		ts->slot_curr[i] = CY_UNUSED;
+	}
 
 	input_sync(ts->input);
 
@@ -845,12 +812,12 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int i
 	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
 			     0, CY_MAXZ, 0, 0);
 
-	input_mt_init_slots(input_device, CY_MAX_FINGER);
+	input_mt_init_slots(input_device, CY_MAX_ID);
 
-	for (i = 0; i < CY_MAX_FINGER; i++)
-		ts->slots[i] = CY_SLOT_UNUSED;
-
-	ts->slot_cnt = 0;
+	for (i = 0; i < CY_MAX_ID; i++) {
+		ts->slot_prev[i] = CY_UNUSED;
+		ts->slot_curr[i] = CY_UNUSED;
+	}
 
 	if (input_register_device(input_device)) {
 		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
