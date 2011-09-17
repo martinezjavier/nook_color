@@ -322,7 +322,6 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 	/* wait for TTSP Device to complete switch to Operational mode */
 	tries = 0;
 	do {
-		msleep(CY_DELAY_DFLT);
 		retval = ttsp_read_block_data(ts, CY_REG_BASE,
 			sizeof(xy_data), &(xy_data));
 	} while (!((retval == 0) &&
