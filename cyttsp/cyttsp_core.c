@@ -756,6 +756,7 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int i
 {
 	struct input_dev *input_device;
 	int i;
+	int ret;
 
 	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
 
@@ -824,16 +825,17 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int i
 		ts->slot_curr[i] = CY_UNUSED;
 	}
 
-	if (input_register_device(input_device)) {
-		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
-			__func__);
+	ret = input_register_device(input_device);
+	if (ret) {
+		dev_err(ts->dev, "%s: Error, failed to register input device: %d\n",
+			__func__, ret);
 		goto error_input_register_device;
 	}
 
 	goto no_error;
 
 error_input_register_device:
-	input_unregister_device(input_device);
+	input_free_device(input_device);
 error_input_allocate_device:
 	if (ts->platform_data->exit)
 		ts->platform_data->exit();
