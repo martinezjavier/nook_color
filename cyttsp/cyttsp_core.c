@@ -489,7 +489,7 @@ static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
 	}
 }
 
-static int cyttsp_xy_worker(struct cyttsp *ts)
+static int cyttsp_handle_tchdata(struct cyttsp *ts)
 {
 	struct cyttsp_xydata xy_data;
 	u8 num_cur_tch;
@@ -587,7 +587,7 @@ static irqreturn_t cyttsp_irq(int irq, void *handle)
 		complete(&ts->bl_ready);
 	else {
 		/* process the touches */
-		retval = cyttsp_xy_worker(ts);
+		retval = cyttsp_handle_tchdata(ts);
 
 		if (retval < 0) {
 			/*
