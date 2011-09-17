@@ -263,7 +263,6 @@ static int cyttsp_spi_resume(struct spi_device *spi)
 static struct spi_driver cyttsp_spi_driver = {
 	.driver = {
 		.name = CY_SPI_NAME,
-		.bus = &spi_bus_type,
 		.owner = THIS_MODULE,
 	},
 	.probe = cyttsp_spi_probe,

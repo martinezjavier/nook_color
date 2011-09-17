@@ -146,7 +146,6 @@ struct cyttsp {
 	int irq;
 	struct input_dev *input;
 	char phys[32];
-	const struct bus_type *bus_type;
 	const struct cyttsp_platform_data *platform_data;
 	struct cyttsp_bus_ops *bus_ops;
 	struct cyttsp_bootloader_data bl_data;
@@ -796,7 +795,6 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int i
 	snprintf(ts->phys, sizeof(ts->phys), "%s", dev_name(dev));
 	input_device->phys = ts->phys;
 	input_device->dev.parent = ts->dev;
-	ts->bus_type = bus_ops->dev->bus;
 	input_device->open = cyttsp_open;
 	input_device->close = cyttsp_close;
 	input_set_drvdata(input_device, ts);
