@@ -672,27 +672,29 @@ int cyttsp_resume(void *handle)
 	int retval = 0;
 	struct cyttsp_xydata xydata;
 
-	if (ts->platform_data->use_sleep && (ts->power_state !=
-		CY_ACTIVE_STATE)) {
-		if (ts->platform_data->wakeup) {
-			retval = ts->platform_data->wakeup();
-			if (retval < 0)
-				dev_dbg(ts->dev, "%s: Error, wakeup failed!\n",
-					__func__);
-		} else {
-			dev_dbg(ts->dev, "%s: Error, wakeup not implemented "
-				"(check board file).\n", __func__);
-			retval = -ENOSYS;
+	if (ts) {
+		if (ts->platform_data->use_sleep && (ts->power_state !=
+						     CY_ACTIVE_STATE)) {
+			if (ts->platform_data->wakeup) {
+				retval = ts->platform_data->wakeup();
+				if (retval < 0)
+					dev_dbg(ts->dev, "%s: Error, wakeup failed!\n",
+						__func__);
+			} else {
+				dev_dbg(ts->dev, "%s: Error, wakeup not implemented "
+					"(check board file).\n", __func__);
+				retval = -ENOSYS;
+			}
+			if (!(retval < 0)) {
+				retval = ttsp_read_block_data(ts, CY_REG_BASE,
+							      sizeof(xydata), &xydata);
+				if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
+					ts->power_state = CY_ACTIVE_STATE;
+			}
 		}
-		if (!(retval < 0)) {
-			retval = ttsp_read_block_data(ts, CY_REG_BASE,
-				sizeof(xydata), &xydata);
-			if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
-				ts->power_state = CY_ACTIVE_STATE;
-		}
+		dev_dbg(ts->dev, "%s: Wake Up %s\n", __func__,
+			(retval < 0) ? "FAIL" : "PASS");
 	}
-	dev_dbg(ts->dev, "%s: Wake Up %s\n", __func__,
-		(retval < 0) ? "FAIL" : "PASS");
 	return retval;
 }
 EXPORT_SYMBOL_GPL(cyttsp_resume);
