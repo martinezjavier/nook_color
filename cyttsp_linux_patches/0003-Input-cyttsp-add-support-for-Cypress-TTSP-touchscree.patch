@@ -1,7 +1,7 @@
-From d444695f601789dc22accbc752da924d44c54e0b Mon Sep 17 00:00:00 2001
+From 35c116c3438bf99655216b8c8303e808a1f1071e Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sat, 3 Sep 2011 07:11:08 +0200
-Subject: [PATCH V2 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Date: Sun, 18 Sep 2011 03:30:09 +0200
+Subject: [PATCH V3 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -12,53 +12,26 @@ The original author of the driver is Kevin McNeely <kev@cypress.com>
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-Changes since v1: Fix issues called out by Dmitry Torokhov
+V1: Fix issues called out by Dmitry Torokhov
 	- Extract the IRQ from the spi client data and pass to cyttsp_core_init
 	- Remove the extra retries and limit the retries to the cyttsp_core.c
 	  read/write block functions.
 	- Cleanup cyttsp_spi_xfer(), check ACK in write operation and fix special
 	  EIO case to show its meaning.
 
- drivers/input/touchscreen/cyttsp/Kconfig      |   12 +
- drivers/input/touchscreen/cyttsp/Makefile     |    1 +
- drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  293 +++++++++++++++++++++++++
- 3 files changed, 306 insertions(+), 0 deletions(-)
+V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
+    - Remove bus type info since it is not used
+
+ drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  292 +++++++++++++++++++++++++
+ 1 files changed, 292 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 
-diff --git a/drivers/input/touchscreen/cyttsp/Kconfig b/drivers/input/touchscreen/cyttsp/Kconfig
-index 256642d..e72c66c 100644
---- a/drivers/input/touchscreen/cyttsp/Kconfig
-+++ b/drivers/input/touchscreen/cyttsp/Kconfig
-@@ -14,3 +14,15 @@ config TOUCHSCREEN_CYTTSP_I2C
- 
- 	  To compile this driver as a module, choose M here: the
- 	  module will be called cyttsp-i2c.
-+
-+config TOUCHSCREEN_CYTTSP_SPI
-+	tristate "Cypress TTSP spi touchscreen"
-+	depends on SPI_MASTER && TOUCHSCREEN_CYTTSP_CORE
-+	help
-+	  Say Y here if you have a Cypress TTSP touchscreen
-+	  connected to your  with an SPI interface.
-+
-+	  If unsure, say N.
-+
-+	  To compile this driver as a module, choose M here: the
-+	  module will be called cyttsp-spi.
-diff --git a/drivers/input/touchscreen/cyttsp/Makefile b/drivers/input/touchscreen/cyttsp/Makefile
-index 9101dc9..687eeaa 100644
---- a/drivers/input/touchscreen/cyttsp/Makefile
-+++ b/drivers/input/touchscreen/cyttsp/Makefile
-@@ -1,2 +1,3 @@
- obj-$(CONFIG_TOUCHSCREEN_CYTTSP_CORE)   += cyttsp_core.o
- obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C)    += cyttsp_i2c.o
-+obj-$(CONFIG_TOUCHSCREEN_CYTTSP_SPI)    += cyttsp_spi.o
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_spi.c b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 new file mode 100644
-index 0000000..71a586a
+index 0000000..5567859
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,292 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) SPI touchscreen driver.
@@ -324,7 +297,6 @@ index 0000000..71a586a
 +static struct spi_driver cyttsp_spi_driver = {
 +	.driver = {
 +		.name = CY_SPI_NAME,
-+		.bus = &spi_bus_type,
 +		.owner = THIS_MODULE,
 +	},
 +	.probe = cyttsp_spi_probe,

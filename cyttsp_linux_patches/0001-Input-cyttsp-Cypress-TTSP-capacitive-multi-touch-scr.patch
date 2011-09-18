@@ -1,7 +1,7 @@
-From 7b9c318f2c9d0c4620c4be3e75555d3a434d9fd2 Mon Sep 17 00:00:00 2001
+From 3d5fc19ae9982b95ba63de655c5a741ce2fcc4b5 Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Tue, 16 Aug 2011 02:01:59 +0200
-Subject: [PATCH V2 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
+Date: Sun, 18 Sep 2011 03:29:21 +0200
+Subject: [PATCH V3 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
 
 Cypress TrueTouch(tm) Standard Product controllers are found in
 a wide range of embedded devices. This driver add support for a
@@ -19,16 +19,26 @@ protocol type B (stateful) support was added by Javier Martinez Canillas.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-Changes since v1: Fix issues called out by Dmitry Torokhov
+V2: Fix issues called out by Dmitry Torokhov
      - Add msleep() delays between retries for read and write operations
      - Change cyttsp_core_init() to receive the IRQ from the client data 
        instead of obtaining from the platform_data
 
+V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
+    - Map each possible track id to a multitouch input slot
+    - Remove bus type info since it is not used
+    - Add retry logic to ttsp_write_block_data()
+    - ttsp_read_block_data() already msleep() remove the sleep in the caller
+    - cyttsp_xy_worker() sounds as if it's a workqueue, change the function name
+    - Check if handle is NULL in cyttsp_resume()
+    - Use platform data's use_sleep to decide to go deep sleep or low power mode
+    - input_register_device() error path has to call input_free_device()
+
  drivers/input/touchscreen/Kconfig              |    2 +
  drivers/input/touchscreen/Makefile             |    1 +
- drivers/input/touchscreen/cyttsp/Kconfig       |    4 +
- drivers/input/touchscreen/cyttsp/Makefile      |    1 +
- drivers/input/touchscreen/cyttsp/cyttsp_core.c |  879 ++++++++++++++++++++++++
+ drivers/input/touchscreen/cyttsp/Kconfig       |   28 +
+ drivers/input/touchscreen/cyttsp/Makefile      |    3 +
+ drivers/input/touchscreen/cyttsp/cyttsp_core.c |  853 ++++++++++++++++++++++++
  drivers/input/touchscreen/cyttsp/cyttsp_core.h |   56 ++
  include/linux/input/cyttsp.h                   |   68 ++
  7 files changed, 1011 insertions(+), 0 deletions(-)
@@ -39,7 +49,7 @@ Changes since v1: Fix issues called out by Dmitry Torokhov
  create mode 100644 include/linux/input/cyttsp.h
 
 diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
-index cabd9e5..6786680 100644
+index cabd9e5..6933823 100644
 --- a/drivers/input/touchscreen/Kconfig
 +++ b/drivers/input/touchscreen/Kconfig
 @@ -726,4 +726,6 @@ config TOUCHSCREEN_TPS6507X
@@ -50,37 +60,63 @@ index cabd9e5..6786680 100644
 +
  endif
 diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
-index 282d6f7..945950a 100644
+index 282d6f7..ff7ad47 100644
 --- a/drivers/input/touchscreen/Makefile
 +++ b/drivers/input/touchscreen/Makefile
 @@ -60,3 +60,4 @@ obj-$(CONFIG_TOUCHSCREEN_WM97XX_MAINSTONE)	+= mainstone-wm97xx.o
  obj-$(CONFIG_TOUCHSCREEN_WM97XX_ZYLONITE)	+= zylonite-wm97xx.o
  obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
  obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
-+obj-$(CONFIG_TOUCHSCREEN_CYTTSP_CORE)	+= cyttsp/
++obj-S(CONFIG_TOUCHSCREEN_CYTTSP_CORE)	+= cyttsp/
 diff --git a/drivers/input/touchscreen/cyttsp/Kconfig b/drivers/input/touchscreen/cyttsp/Kconfig
 new file mode 100644
-index 0000000..7e8e0f4
+index 0000000..e72c66c
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/Kconfig
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,28 @@
 +config TOUCHSCREEN_CYTTSP_CORE
 +	tristate "Cypress TTSP touchscreen core"
 +	help
 +	  Always activated for Cypress TTSP touchscreen
++
++config TOUCHSCREEN_CYTTSP_I2C
++	tristate "Cypress TTSP i2c touchscreen"
++	depends on I2C && TOUCHSCREEN_CYTTSP_CORE
++	help
++	  Say Y here if you have a Cypress TTSP touchscreen
++	  connected to your system with an I2C interface.
++
++	  If unsure, say N.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called cyttsp-i2c.
++
++config TOUCHSCREEN_CYTTSP_SPI
++	tristate "Cypress TTSP spi touchscreen"
++	depends on SPI_MASTER && TOUCHSCREEN_CYTTSP_CORE
++	help
++	  Say Y here if you have a Cypress TTSP touchscreen
++	  connected to your  with an SPI interface.
++
++	  If unsure, say N.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called cyttsp-spi.
 diff --git a/drivers/input/touchscreen/cyttsp/Makefile b/drivers/input/touchscreen/cyttsp/Makefile
 new file mode 100644
-index 0000000..d1b250f
+index 0000000..687eeaa
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/Makefile
-@@ -0,0 +1 @@
+@@ -0,0 +1,3 @@
 +obj-$(CONFIG_TOUCHSCREEN_CYTTSP_CORE)   += cyttsp_core.o
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C)    += cyttsp_i2c.o
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_SPI)    += cyttsp_spi.o
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_core.c b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
 new file mode 100644
-index 0000000..a145518
+index 0000000..8e7bd66
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
-@@ -0,0 +1,879 @@
+@@ -0,0 +1,853 @@
 +/*
 + * Core Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -153,7 +189,9 @@ index 0000000..a145518
 +
 +/* Slots management */
 +#define CY_MAX_FINGER               4
-+#define CY_SLOT_UNUSED              0
++#define CY_UNUSED                   0
++#define CY_USED                     1
++#define CY_MAX_ID                   15
 +
 +struct cyttsp_tch {
 +	__be16 x, y;
@@ -227,16 +265,14 @@ index 0000000..a145518
 +	int irq;
 +	struct input_dev *input;
 +	char phys[32];
-+	const struct bus_type *bus_type;
 +	const struct cyttsp_platform_data *platform_data;
 +	struct cyttsp_bus_ops *bus_ops;
 +	struct cyttsp_bootloader_data bl_data;
 +	struct cyttsp_sysinfo_data sysinfo_data;
 +	struct completion bl_ready;
 +	enum cyttsp_powerstate power_state;
-+	int slot_cnt;
-+	int slots[CY_MAX_FINGER];
-+	int slot_status[CY_MAX_FINGER];
++	int slot_curr[CY_MAX_ID];
++	int slot_prev[CY_MAX_ID];
 +};
 +
 +static const u8 bl_command[] = {
@@ -270,12 +306,18 @@ index 0000000..a145518
 +	u8 length, void *buf)
 +{
 +	int retval;
++	int tries;
++
 +	if (!buf || !length)
 +		return -EINVAL;
 +
-+	retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
-+	if (retval)
-+		msleep(CY_DELAY_DFLT);
++	for (tries = 0, retval = -1;
++	     tries < CY_NUM_RETRY && (retval < 0);
++	     tries++) {
++		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
++		if (retval)
++			msleep(CY_DELAY_DFLT);
++	}
 +
 +	return retval;
 +}
@@ -399,7 +441,6 @@ index 0000000..a145518
 +	/* wait for TTSP Device to complete switch to Operational mode */
 +	tries = 0;
 +	do {
-+		msleep(CY_DELAY_DFLT);
 +		retval = ttsp_read_block_data(ts, CY_REG_BASE,
 +			sizeof(xy_data), &(xy_data));
 +	} while (!((retval == 0) &&
@@ -567,38 +608,12 @@ index 0000000..a145518
 +	}
 +}
 +
-+static int cyttsp_get_slot_id(struct cyttsp *ts, int id)
-+{
-+	int i;
-+
-+	for (i = 0; i < CY_MAX_FINGER; i++)
-+		if (ts->slots[i] == id)
-+			return i;
-+
-+	return -1;
-+}
-+
-+static int cyttsp_assign_next_slot(struct cyttsp *ts, int id)
-+{
-+	int i;
-+
-+	for (i = 0; i < CY_MAX_FINGER; i++)
-+		if (ts->slots[i] == CY_SLOT_UNUSED) {
-+			ts->slots[i] = id;
-+			ts->slot_cnt++;
-+			return i;
-+		}
-+
-+	return -1;
-+}
-+
-+static int cyttsp_xy_worker(struct cyttsp *ts)
++static int cyttsp_handle_tchdata(struct cyttsp *ts)
 +{
 +	struct cyttsp_xydata xy_data;
 +	u8 num_cur_tch;
 +	int i;
 +	int ids[4];
-+	int slot = -1;
 +	struct cyttsp_tch *tch = NULL;
 +	int x, y, z;
 +
@@ -640,14 +655,8 @@ index 0000000..a145518
 +
 +	cyttsp_extract_track_ids(&xy_data, ids);
 +
-+	for (i = 0; i < CY_MAX_FINGER; i++)
-+		ts->slot_status[i] = false;
-+
 +	for (i = 0; i < num_cur_tch; i++) {
-+		slot = cyttsp_get_slot_id(ts, ids[i]);
-+
-+		if (slot < 0)
-+			slot = cyttsp_assign_next_slot(ts, ids[i]);
++		ts->slot_curr[ids[i] - 1] = CY_USED;
 +
 +		cyttsp_get_tch(&xy_data, i, &tch);
 +
@@ -655,18 +664,16 @@ index 0000000..a145518
 +		y = be16_to_cpu(tch->y);
 +		z = tch->z;
 +
-+		cyttsp_report_slot(ts->input, slot, x, y, z);
-+
-+		ts->slot_status[slot] = true;
++		cyttsp_report_slot(ts->input, ids[i] - 1, x, y, z);
 +	}
 +
-+	for (i = 0; i < CY_MAX_FINGER; i++)
-+		if (ts->slot_status[i] == false &&
-+		   ts->slots[i] != CY_SLOT_UNUSED) {
-+			ts->slots[i] = CY_SLOT_UNUSED;
-+			ts->slot_cnt--;
++	for (i = 0; i < CY_MAX_ID; i++) {
++		if (ts->slot_prev[i] == CY_USED &&
++		    ts->slot_curr[i] == CY_UNUSED)
 +			cyttsp_report_slot_empty(ts->input, i);
-+		}
++		ts->slot_prev[i] = ts->slot_curr[i];
++		ts->slot_curr[i] = CY_UNUSED;
++	}
 +
 +	input_sync(ts->input);
 +
@@ -699,7 +706,7 @@ index 0000000..a145518
 +		complete(&ts->bl_ready);
 +	else {
 +		/* process the touches */
-+		retval = cyttsp_xy_worker(ts);
++		retval = cyttsp_handle_tchdata(ts);
 +
 +		if (retval < 0) {
 +			/*
@@ -784,27 +791,29 @@ index 0000000..a145518
 +	int retval = 0;
 +	struct cyttsp_xydata xydata;
 +
-+	if (ts->platform_data->use_sleep && (ts->power_state !=
-+		CY_ACTIVE_STATE)) {
-+		if (ts->platform_data->wakeup) {
-+			retval = ts->platform_data->wakeup();
-+			if (retval < 0)
-+				dev_dbg(ts->dev, "%s: Error, wakeup failed!\n",
-+					__func__);
-+		} else {
-+			dev_dbg(ts->dev, "%s: Error, wakeup not implemented "
-+				"(check board file).\n", __func__);
-+			retval = -ENOSYS;
++	if (ts) {
++		if (ts->platform_data->use_sleep && (ts->power_state !=
++						     CY_ACTIVE_STATE)) {
++			if (ts->platform_data->wakeup) {
++				retval = ts->platform_data->wakeup();
++				if (retval < 0)
++					dev_dbg(ts->dev, "%s: Error, wakeup failed!\n",
++						__func__);
++			} else {
++				dev_dbg(ts->dev, "%s: Error, wakeup not implemented "
++					"(check board file).\n", __func__);
++				retval = -ENOSYS;
++			}
++			if (!(retval < 0)) {
++				retval = ttsp_read_block_data(ts, CY_REG_BASE,
++							      sizeof(xydata), &xydata);
++				if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
++					ts->power_state = CY_ACTIVE_STATE;
++			}
 +		}
-+		if (!(retval < 0)) {
-+			retval = ttsp_read_block_data(ts, CY_REG_BASE,
-+				sizeof(xydata), &xydata);
-+			if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
-+				ts->power_state = CY_ACTIVE_STATE;
-+		}
++		dev_dbg(ts->dev, "%s: Wake Up %s\n", __func__,
++			(retval < 0) ? "FAIL" : "PASS");
 +	}
-+	dev_dbg(ts->dev, "%s: Wake Up %s\n", __func__,
-+		(retval < 0) ? "FAIL" : "PASS");
 +	return retval;
 +}
 +EXPORT_SYMBOL_GPL(cyttsp_resume);
@@ -817,7 +826,7 @@ index 0000000..a145518
 +
 +	if (ts->platform_data->use_sleep &&
 +		(ts->power_state == CY_ACTIVE_STATE)) {
-+		sleep_mode = CY_DEEP_SLEEP_MODE;
++		sleep_mode = ts->platform_data->use_sleep;
 +		retval = ttsp_write_block_data(ts,
 +			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
 +		if (!(retval < 0))
@@ -866,6 +875,7 @@ index 0000000..a145518
 +{
 +	struct input_dev *input_device;
 +	int i;
++	int ret;
 +
 +	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
 +
@@ -912,7 +922,6 @@ index 0000000..a145518
 +	snprintf(ts->phys, sizeof(ts->phys), "%s", dev_name(dev));
 +	input_device->phys = ts->phys;
 +	input_device->dev.parent = ts->dev;
-+	ts->bus_type = bus_ops->dev->bus;
 +	input_device->open = cyttsp_open;
 +	input_device->close = cyttsp_close;
 +	input_set_drvdata(input_device, ts);
@@ -928,23 +937,24 @@ index 0000000..a145518
 +	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
 +			     0, CY_MAXZ, 0, 0);
 +
-+	input_mt_init_slots(input_device, CY_MAX_FINGER);
++	input_mt_init_slots(input_device, CY_MAX_ID);
 +
-+	for (i = 0; i < CY_MAX_FINGER; i++)
-+		ts->slots[i] = CY_SLOT_UNUSED;
++	for (i = 0; i < CY_MAX_ID; i++) {
++		ts->slot_prev[i] = CY_UNUSED;
++		ts->slot_curr[i] = CY_UNUSED;
++	}
 +
-+	ts->slot_cnt = 0;
-+
-+	if (input_register_device(input_device)) {
-+		dev_dbg(ts->dev, "%s: Error, failed to register input device\n",
-+			__func__);
++	ret = input_register_device(input_device);
++	if (ret) {
++		dev_err(ts->dev, "%s: Error, failed to register input device: %d\n",
++			__func__, ret);
 +		goto error_input_register_device;
 +	}
 +
 +	goto no_error;
 +
 +error_input_register_device:
-+	input_unregister_device(input_device);
++	input_free_device(input_device);
 +error_input_allocate_device:
 +	if (ts->platform_data->exit)
 +		ts->platform_data->exit();
