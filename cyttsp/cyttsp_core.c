@@ -192,7 +192,7 @@ static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 	if (!buf || !length)
 		return -EINVAL;
 
-	for (tries = 0, retval = 1;
+	for (tries = 0, retval = -1;
 	     tries < CY_NUM_RETRY && (retval < 0);
 	     tries++) {
 		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
