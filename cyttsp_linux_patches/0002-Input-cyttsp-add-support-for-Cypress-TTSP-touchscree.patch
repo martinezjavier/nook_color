@@ -1,7 +1,7 @@
-From 732e8de988d24ff31ba4e9a4158656e728f6e33f Mon Sep 17 00:00:00 2001
+From 2e764ce9c0c40ce3d7bb963cb27f27e3dd2635de Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sun, 18 Sep 2011 03:29:38 +0200
-Subject: [PATCH V3 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+Date: Wed, 5 Oct 2011 22:14:09 +0200
+Subject: [PATCH v4 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -12,11 +12,13 @@ The original author of the driver is Kevin McNeely <kev@cypress.com>
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-v2: Fix issues called out by Dmitry Torokhov
-	- Extract the IRQ from the i2c client data and pass to cyttsp_core_init
 
-V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
+v2: Fix issues called out by Dmitry Torokhov
+    - Extract the IRQ from the i2c client data and pass to cyttsp_core_init
+
+v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
     - Remove bus type info since it is not used
+
 
  drivers/input/touchscreen/cyttsp/cyttsp_i2c.c |  187 +++++++++++++++++++++++++
  1 files changed, 187 insertions(+), 0 deletions(-)

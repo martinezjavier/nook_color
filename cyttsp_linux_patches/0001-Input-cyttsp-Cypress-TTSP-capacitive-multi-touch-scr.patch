@@ -1,7 +1,7 @@
-From 3d5fc19ae9982b95ba63de655c5a741ce2fcc4b5 Mon Sep 17 00:00:00 2001
+From a2995c07ac9c7627155c4b47f53a45d39a7012fc Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sun, 18 Sep 2011 03:29:21 +0200
-Subject: [PATCH V3 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
+Date: Wed, 5 Oct 2011 22:13:32 +0200
+Subject: [PATCH v4 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
 
 Cypress TrueTouch(tm) Standard Product controllers are found in
 a wide range of embedded devices. This driver add support for a
@@ -19,12 +19,13 @@ protocol type B (stateful) support was added by Javier Martinez Canillas.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-V2: Fix issues called out by Dmitry Torokhov
+
+v2: Fix issues called out by Dmitry Torokhov
      - Add msleep() delays between retries for read and write operations
      - Change cyttsp_core_init() to receive the IRQ from the client data 
        instead of obtaining from the platform_data
 
-V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
+v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
     - Map each possible track id to a multitouch input slot
     - Remove bus type info since it is not used
     - Add retry logic to ttsp_write_block_data()
@@ -34,14 +35,18 @@ V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
     - Use platform data's use_sleep to decide to go deep sleep or low power mode
     - input_register_device() error path has to call input_free_device()
 
+v4: Fix issues called out by Henrik Rydberg
+    - Remove unnecesary code and cleanup contact handler since input core is able
+      to detect duplicates
+
  drivers/input/touchscreen/Kconfig              |    2 +
  drivers/input/touchscreen/Makefile             |    1 +
- drivers/input/touchscreen/cyttsp/Kconfig       |   28 +
+ drivers/input/touchscreen/cyttsp/Kconfig       |   36 +
  drivers/input/touchscreen/cyttsp/Makefile      |    3 +
- drivers/input/touchscreen/cyttsp/cyttsp_core.c |  853 ++++++++++++++++++++++++
- drivers/input/touchscreen/cyttsp/cyttsp_core.h |   56 ++
+ drivers/input/touchscreen/cyttsp/cyttsp_core.c |  841 ++++++++++++++++++++++++
+ drivers/input/touchscreen/cyttsp/cyttsp_core.h |   57 ++
  include/linux/input/cyttsp.h                   |   68 ++
- 7 files changed, 1011 insertions(+), 0 deletions(-)
+ 7 files changed, 1008 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/Kconfig
  create mode 100644 drivers/input/touchscreen/cyttsp/Makefile
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_core.c
@@ -60,24 +65,32 @@ index cabd9e5..6933823 100644
 +
  endif
 diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
-index 282d6f7..ff7ad47 100644
+index 282d6f7..945950a 100644
 --- a/drivers/input/touchscreen/Makefile
 +++ b/drivers/input/touchscreen/Makefile
 @@ -60,3 +60,4 @@ obj-$(CONFIG_TOUCHSCREEN_WM97XX_MAINSTONE)	+= mainstone-wm97xx.o
  obj-$(CONFIG_TOUCHSCREEN_WM97XX_ZYLONITE)	+= zylonite-wm97xx.o
  obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
  obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
-+obj-S(CONFIG_TOUCHSCREEN_CYTTSP_CORE)	+= cyttsp/
++obj-$(CONFIG_TOUCHSCREEN_CYTTSP_CORE)	+= cyttsp/
 diff --git a/drivers/input/touchscreen/cyttsp/Kconfig b/drivers/input/touchscreen/cyttsp/Kconfig
 new file mode 100644
-index 0000000..e72c66c
+index 0000000..c8bc322
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/Kconfig
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,36 @@
 +config TOUCHSCREEN_CYTTSP_CORE
 +	tristate "Cypress TTSP touchscreen core"
++	depends on INPUT_TOUCHSCREEN
 +	help
-+	  Always activated for Cypress TTSP touchscreen
++          Say Y here if you have a touchscreen interface using one
++          controller from the Cypress TrueTouch(tm) Standard Product
++	  family.
++
++	  If unsure, say N.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called cyttsp_core.
 +
 +config TOUCHSCREEN_CYTTSP_I2C
 +	tristate "Cypress TTSP i2c touchscreen"
@@ -89,7 +102,7 @@ index 0000000..e72c66c
 +	  If unsure, say N.
 +
 +	  To compile this driver as a module, choose M here: the
-+	  module will be called cyttsp-i2c.
++	  module will be called cyttsp_i2c.
 +
 +config TOUCHSCREEN_CYTTSP_SPI
 +	tristate "Cypress TTSP spi touchscreen"
@@ -101,7 +114,7 @@ index 0000000..e72c66c
 +	  If unsure, say N.
 +
 +	  To compile this driver as a module, choose M here: the
-+	  module will be called cyttsp-spi.
++	  module will be called cyttsp_spi.
 diff --git a/drivers/input/touchscreen/cyttsp/Makefile b/drivers/input/touchscreen/cyttsp/Makefile
 new file mode 100644
 index 0000000..687eeaa
@@ -113,10 +126,10 @@ index 0000000..687eeaa
 +obj-$(CONFIG_TOUCHSCREEN_CYTTSP_SPI)    += cyttsp_spi.o
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_core.c b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
 new file mode 100644
-index 0000000..8e7bd66
+index 0000000..4c45016
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
-@@ -0,0 +1,853 @@
+@@ -0,0 +1,841 @@
 +/*
 + * Core Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -128,7 +141,7 @@ index 0000000..8e7bd66
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
 + * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
 + *
-+ * Added multi-touch protocol type B support by Javier Martinez Canillas
++ * Multi-touch protocol type B support by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -189,8 +202,6 @@ index 0000000..8e7bd66
 +
 +/* Slots management */
 +#define CY_MAX_FINGER               4
-+#define CY_UNUSED                   0
-+#define CY_USED                     1
 +#define CY_MAX_ID                   15
 +
 +struct cyttsp_tch {
@@ -271,8 +282,6 @@ index 0000000..8e7bd66
 +	struct cyttsp_sysinfo_data sysinfo_data;
 +	struct completion bl_ready;
 +	enum cyttsp_powerstate power_state;
-+	int slot_curr[CY_MAX_ID];
-+	int slot_prev[CY_MAX_ID];
 +};
 +
 +static const u8 bl_command[] = {
@@ -589,22 +598,20 @@ index 0000000..8e7bd66
 +	ids[3] = xy_data->touch34_id & 0xF;
 +}
 +
-+static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
-+			   struct cyttsp_tch **tch)
++static const struct cyttsp_tch *cyttsp_get_tch(struct cyttsp_xydata *xy_data,
++					       int idx)
 +{
 +	switch (idx) {
 +	case 0:
-+		*tch = &xy_data->tch1;
-+		break;
++		return &xy_data->tch1;
 +	case 1:
-+		*tch = &xy_data->tch2;
-+		break;
++		return &xy_data->tch2;
 +	case 2:
-+		*tch = &xy_data->tch3;
-+		break;
++		return &xy_data->tch3;
 +	case 3:
-+		*tch = &xy_data->tch4;
-+		break;
++		return  &xy_data->tch4;
++	default:
++		return NULL;
 +	}
 +}
 +
@@ -614,8 +621,9 @@ index 0000000..8e7bd66
 +	u8 num_cur_tch;
 +	int i;
 +	int ids[4];
-+	struct cyttsp_tch *tch = NULL;
++	const struct cyttsp_tch *tch = NULL;
 +	int x, y, z;
++	int used = 0;
 +
 +	/* Get touch data from CYTTSP device */
 +	if (ttsp_read_block_data(ts,
@@ -656,24 +664,20 @@ index 0000000..8e7bd66
 +	cyttsp_extract_track_ids(&xy_data, ids);
 +
 +	for (i = 0; i < num_cur_tch; i++) {
-+		ts->slot_curr[ids[i] - 1] = CY_USED;
++		used |= (1 << ids[i]);
 +
-+		cyttsp_get_tch(&xy_data, i, &tch);
++		tch = cyttsp_get_tch(&xy_data, i);
 +
 +		x = be16_to_cpu(tch->x);
 +		y = be16_to_cpu(tch->y);
 +		z = tch->z;
 +
-+		cyttsp_report_slot(ts->input, ids[i] - 1, x, y, z);
++		cyttsp_report_slot(ts->input, ids[i], x, y, z);
 +	}
 +
-+	for (i = 0; i < CY_MAX_ID; i++) {
-+		if (ts->slot_prev[i] == CY_USED &&
-+		    ts->slot_curr[i] == CY_UNUSED)
++	for (i = 0; i < CY_MAX_ID; i++)
++		if (!(used & (1 << i)))
 +			cyttsp_report_slot_empty(ts->input, i);
-+		ts->slot_prev[i] = ts->slot_curr[i];
-+		ts->slot_curr[i] = CY_UNUSED;
-+	}
 +
 +	input_sync(ts->input);
 +
@@ -806,8 +810,10 @@ index 0000000..8e7bd66
 +			}
 +			if (!(retval < 0)) {
 +				retval = ttsp_read_block_data(ts, CY_REG_BASE,
-+							      sizeof(xydata), &xydata);
-+				if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
++							      sizeof(xydata),
++							      &xydata);
++				if (!(retval < 0) &&
++				    !GET_HSTMODE(xydata.hst_mode))
 +					ts->power_state = CY_ACTIVE_STATE;
 +			}
 +		}
@@ -871,10 +877,10 @@ index 0000000..8e7bd66
 +	free_irq(ts->irq, ts);
 +}
 +
-+void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq)
++void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
++		       struct device *dev, int irq)
 +{
 +	struct input_dev *input_device;
-+	int i;
 +	int ret;
 +
 +	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
@@ -939,11 +945,6 @@ index 0000000..8e7bd66
 +
 +	input_mt_init_slots(input_device, CY_MAX_ID);
 +
-+	for (i = 0; i < CY_MAX_ID; i++) {
-+		ts->slot_prev[i] = CY_UNUSED;
-+		ts->slot_curr[i] = CY_UNUSED;
-+	}
-+
 +	ret = input_register_device(input_device);
 +	if (ret) {
 +		dev_err(ts->dev, "%s: Error, failed to register input device: %d\n",
@@ -972,10 +973,10 @@ index 0000000..8e7bd66
 +
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_core.h b/drivers/input/touchscreen/cyttsp/cyttsp_core.h
 new file mode 100644
-index 0000000..e72fecf
+index 0000000..feba4b6
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_core.h
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,57 @@
 +/*
 + * Header file for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -1023,7 +1024,8 @@ index 0000000..e72fecf
 +	struct device *dev;
 +};
 +
-+void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq);
++void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
++		       struct device *dev, int irq);
 +
 +void cyttsp_core_release(void *handle);
 +#ifdef CONFIG_PM

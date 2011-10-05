@@ -1,7 +1,7 @@
-From 35c116c3438bf99655216b8c8303e808a1f1071e Mon Sep 17 00:00:00 2001
+From 6fce7f877552e0e20fe22c74384b08d99c09b89d Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sun, 18 Sep 2011 03:30:09 +0200
-Subject: [PATCH V3 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Date: Wed, 5 Oct 2011 22:14:33 +0200
+Subject: [PATCH v4 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -12,14 +12,15 @@ The original author of the driver is Kevin McNeely <kev@cypress.com>
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-V1: Fix issues called out by Dmitry Torokhov
-	- Extract the IRQ from the spi client data and pass to cyttsp_core_init
-	- Remove the extra retries and limit the retries to the cyttsp_core.c
-	  read/write block functions.
-	- Cleanup cyttsp_spi_xfer(), check ACK in write operation and fix special
-	  EIO case to show its meaning.
 
-V3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
+v2: Fix issues called out by Dmitry Torokhov
+     - Extract the IRQ from the spi client data and pass to cyttsp_core_init
+     - Remove the extra retries and limit the retries to the cyttsp_core.c
+       read/write block functions.
+     - Cleanup cyttsp_spi_xfer(), check ACK in write operation and fix special
+       EIO case to show its meaning.
+
+v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
     - Remove bus type info since it is not used
 
  drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  292 +++++++++++++++++++++++++
