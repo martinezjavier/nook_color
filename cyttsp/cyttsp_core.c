@@ -678,8 +678,10 @@ int cyttsp_resume(void *handle)
 			}
 			if (!(retval < 0)) {
 				retval = ttsp_read_block_data(ts, CY_REG_BASE,
-							      sizeof(xydata), &xydata);
-				if (!(retval < 0) && !GET_HSTMODE(xydata.hst_mode))
+							      sizeof(xydata),
+							      &xydata);
+				if (!(retval < 0) &&
+				    !GET_HSTMODE(xydata.hst_mode))
 					ts->power_state = CY_ACTIVE_STATE;
 			}
 		}
@@ -743,7 +745,8 @@ static void cyttsp_close(struct input_dev *dev)
 	free_irq(ts->irq, ts);
 }
 
-void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq)
+void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
+		       struct device *dev, int irq)
 {
 	struct input_dev *input_device;
 	int ret;

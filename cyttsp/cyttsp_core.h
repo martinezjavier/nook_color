@@ -45,7 +45,8 @@ struct cyttsp_bus_ops {
 	struct device *dev;
 };
 
-void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq);
+void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
+		       struct device *dev, int irq);
 
 void cyttsp_core_release(void *handle);
 #ifdef CONFIG_PM
