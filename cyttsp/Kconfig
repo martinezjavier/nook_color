@@ -1,7 +1,15 @@
 config TOUCHSCREEN_CYTTSP_CORE
 	tristate "Cypress TTSP touchscreen core"
+	depends on INPUT_TOUCHSCREEN
 	help
-	  Always activated for Cypress TTSP touchscreen
+          Say Y here if you have a touchscreen interface using one
+          controller from the Cypress TrueTouch(tm) Standard Product
+	  family.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cyttsp_core.
 
 config TOUCHSCREEN_CYTTSP_I2C
 	tristate "Cypress TTSP i2c touchscreen"
@@ -13,7 +21,7 @@ config TOUCHSCREEN_CYTTSP_I2C
 	  If unsure, say N.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called cyttsp-i2c.
+	  module will be called cyttsp_i2c.
 
 config TOUCHSCREEN_CYTTSP_SPI
 	tristate "Cypress TTSP spi touchscreen"
@@ -25,4 +33,4 @@ config TOUCHSCREEN_CYTTSP_SPI
 	  If unsure, say N.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called cyttsp-spi.
+	  module will be called cyttsp_spi.
