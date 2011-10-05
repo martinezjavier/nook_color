@@ -9,7 +9,7 @@
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
  * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
  *
- * Added multi-touch protocol type B support by Javier Martinez Canillas
+ * Multi-touch protocol type B support by Javier Martinez Canillas
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -70,8 +70,6 @@
 
 /* Slots management */
 #define CY_MAX_FINGER               4
-#define CY_UNUSED                   0
-#define CY_USED                     1
 #define CY_MAX_ID                   15
 
 struct cyttsp_tch {
@@ -152,8 +150,6 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
-	int slot_curr[CY_MAX_ID];
-	int slot_prev[CY_MAX_ID];
 };
 
 static const u8 bl_command[] = {
@@ -470,22 +466,20 @@ static void cyttsp_extract_track_ids(struct cyttsp_xydata *xy_data, int *ids)
 	ids[3] = xy_data->touch34_id & 0xF;
 }
 
-static void cyttsp_get_tch(struct cyttsp_xydata *xy_data, int idx,
-			   struct cyttsp_tch **tch)
+static const struct cyttsp_tch *cyttsp_get_tch(struct cyttsp_xydata *xy_data,
+					       int idx)
 {
 	switch (idx) {
 	case 0:
-		*tch = &xy_data->tch1;
-		break;
+		return &xy_data->tch1;
 	case 1:
-		*tch = &xy_data->tch2;
-		break;
+		return &xy_data->tch2;
 	case 2:
-		*tch = &xy_data->tch3;
-		break;
+		return &xy_data->tch3;
 	case 3:
-		*tch = &xy_data->tch4;
-		break;
+		return  &xy_data->tch4;
+	default:
+		return NULL;
 	}
 }
 
@@ -495,8 +489,9 @@ static int cyttsp_handle_tchdata(struct cyttsp *ts)
 	u8 num_cur_tch;
 	int i;
 	int ids[4];
-	struct cyttsp_tch *tch = NULL;
+	const struct cyttsp_tch *tch = NULL;
 	int x, y, z;
+	int used = 0;
 
 	/* Get touch data from CYTTSP device */
 	if (ttsp_read_block_data(ts,
@@ -537,24 +532,20 @@ static int cyttsp_handle_tchdata(struct cyttsp *ts)
 	cyttsp_extract_track_ids(&xy_data, ids);
 
 	for (i = 0; i < num_cur_tch; i++) {
-		ts->slot_curr[ids[i] - 1] = CY_USED;
+		used |= (1 << ids[i]);
 
-		cyttsp_get_tch(&xy_data, i, &tch);
+		tch = cyttsp_get_tch(&xy_data, i);
 
 		x = be16_to_cpu(tch->x);
 		y = be16_to_cpu(tch->y);
 		z = tch->z;
 
-		cyttsp_report_slot(ts->input, ids[i] - 1, x, y, z);
+		cyttsp_report_slot(ts->input, ids[i], x, y, z);
 	}
 
-	for (i = 0; i < CY_MAX_ID; i++) {
-		if (ts->slot_prev[i] == CY_USED &&
-		    ts->slot_curr[i] == CY_UNUSED)
+	for (i = 0; i < CY_MAX_ID; i++)
+		if (!(used & (1 << i)))
 			cyttsp_report_slot_empty(ts->input, i);
-		ts->slot_prev[i] = ts->slot_curr[i];
-		ts->slot_curr[i] = CY_UNUSED;
-	}
 
 	input_sync(ts->input);
 
@@ -755,7 +746,6 @@ static void cyttsp_close(struct input_dev *dev)
 void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int irq)
 {
 	struct input_dev *input_device;
-	int i;
 	int ret;
 
 	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
@@ -819,11 +809,6 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops, struct device *dev, int i
 			     0, CY_MAXZ, 0, 0);
 
 	input_mt_init_slots(input_device, CY_MAX_ID);
-
-	for (i = 0; i < CY_MAX_ID; i++) {
-		ts->slot_prev[i] = CY_UNUSED;
-		ts->slot_curr[i] = CY_UNUSED;
-	}
 
 	ret = input_register_device(input_device);
 	if (ret) {
