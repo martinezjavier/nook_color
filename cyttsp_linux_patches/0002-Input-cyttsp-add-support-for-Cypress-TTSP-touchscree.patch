@@ -1,35 +1,30 @@
-From 2e764ce9c0c40ce3d7bb963cb27f27e3dd2635de Mon Sep 17 00:00:00 2001
+From 5fa0f4b7bcb44287b96a6b787aa99519d1ab751d Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Wed, 5 Oct 2011 22:14:09 +0200
-Subject: [PATCH v4 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+Date: Sat, 8 Oct 2011 20:23:56 +0200
+Subject: [PATCH v5 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
-
-This patch add supports for the Cypress TTSP I2C bus interface.
-
-The original author of the driver is Kevin McNeely <kev@cypress.com>
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
 
 v2: Fix issues called out by Dmitry Torokhov
-    - Extract the IRQ from the i2c client data and pass to cyttsp_core_init
+    - Extract the IRQ from the i2c client data and pass to cyttsp_core_init()
 
 v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
-    - Remove bus type info since it is not used
+    - Remove bus type info since it is not used.
 
-
- drivers/input/touchscreen/cyttsp/cyttsp_i2c.c |  187 +++++++++++++++++++++++++
- 1 files changed, 187 insertions(+), 0 deletions(-)
+ drivers/input/touchscreen/cyttsp/cyttsp_i2c.c |  190 +++++++++++++++++++++++++
+ 1 files changed, 190 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
 
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
 new file mode 100644
-index 0000000..9c953d2
+index 0000000..146a16d
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,190 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) I2C touchscreen driver.
@@ -39,6 +34,9 @@ index 0000000..9c953d2
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
++ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
++ *
++ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -219,3 +217,4 @@ index 0000000..9c953d2
 +MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 -- 
 1.7.4.1
+

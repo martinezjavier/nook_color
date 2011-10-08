@@ -1,52 +1,54 @@
-From a2995c07ac9c7627155c4b47f53a45d39a7012fc Mon Sep 17 00:00:00 2001
+From 3a491cd0a6d54b5041c5937ccc402e90a9bb8071 Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Wed, 5 Oct 2011 22:13:32 +0200
-Subject: [PATCH v4 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
+Date: Sat, 8 Oct 2011 20:22:24 +0200
+Subject: [PATCH v5 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
 
 Cypress TrueTouch(tm) Standard Product controllers are found in
 a wide range of embedded devices. This driver add support for a
 variety of TTSP controllers.
 
+Since the hardware is capable of tracking identifiable contacts, multi-touch
+protocol type B (stateful) is used to report contact information.
+
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules. This patch
 adds the base core TTSP driver.
-
-The original author of the driver is Kevin McNeely <kev@cypress.com>
-
-Since the hardware is capable of tracking identifiable contacts and the
-original driver used multi-touch protocol type A (stateless), multi-touch
-protocol type B (stateful) support was added by Javier Martinez Canillas.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
 
 v2: Fix issues called out by Dmitry Torokhov
-     - Add msleep() delays between retries for read and write operations
+     - Add msleep() delays between retries for read and write operations.
      - Change cyttsp_core_init() to receive the IRQ from the client data 
-       instead of obtaining from the platform_data
+       instead of obtaining from the platform_data.
 
 v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
-    - Map each possible track id to a multitouch input slot
-    - Remove bus type info since it is not used
-    - Add retry logic to ttsp_write_block_data()
-    - ttsp_read_block_data() already msleep() remove the sleep in the caller
-    - cyttsp_xy_worker() sounds as if it's a workqueue, change the function name
-    - Check if handle is NULL in cyttsp_resume()
-    - Use platform data's use_sleep to decide to go deep sleep or low power mode
-    - input_register_device() error path has to call input_free_device()
+    - Map each possible track id to a multitouch input slot.
+    - Remove bus type info since it is not used.
+    - Add retry logic to ttsp_write_block_data().
+    - ttsp_read_block_data() already msleep() remove the sleep in the caller.
+    - cyttsp_xy_worker() sounds as if it's a workqueue, change the function name.
+    - Check if handle is NULL in cyttsp_resume().
+    - Use platform data's use_sleep to decide to go deep sleep or low power mode.
+    - input_register_device() error path has to call input_free_device().
 
 v4: Fix issues called out by Henrik Rydberg
     - Remove unnecesary code and cleanup contact handler since input core is able
-      to detect duplicates
+      to detect duplicates.
+
+v5: Fix issues called out by Henrik Rydberg
+    - Cleanup ttsp_[read | write]_block_data functions.
+    - Remove unused code to handle extended touch data.
+    - Simplify code in cyttsp_bl_app_data() and cyttsp_soft_reset().
 
  drivers/input/touchscreen/Kconfig              |    2 +
  drivers/input/touchscreen/Makefile             |    1 +
  drivers/input/touchscreen/cyttsp/Kconfig       |   36 +
  drivers/input/touchscreen/cyttsp/Makefile      |    3 +
- drivers/input/touchscreen/cyttsp/cyttsp_core.c |  841 ++++++++++++++++++++++++
- drivers/input/touchscreen/cyttsp/cyttsp_core.h |   57 ++
- include/linux/input/cyttsp.h                   |   68 ++
- 7 files changed, 1008 insertions(+), 0 deletions(-)
+ drivers/input/touchscreen/cyttsp/cyttsp_core.c |  828 ++++++++++++++++++++++++
+ drivers/input/touchscreen/cyttsp/cyttsp_core.h |   60 ++
+ include/linux/input/cyttsp.h                   |   71 ++
+ 7 files changed, 1001 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/Kconfig
  create mode 100644 drivers/input/touchscreen/cyttsp/Makefile
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_core.c
@@ -126,10 +128,10 @@ index 0000000..687eeaa
 +obj-$(CONFIG_TOUCHSCREEN_CYTTSP_SPI)    += cyttsp_spi.o
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_core.c b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
 new file mode 100644
-index 0000000..4c45016
+index 0000000..b92b399
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_core.c
-@@ -0,0 +1,841 @@
+@@ -0,0 +1,828 @@
 +/*
 + * Core Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -141,7 +143,7 @@ index 0000000..4c45016
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
 + * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
 + *
-+ * Multi-touch protocol type B support by Javier Martinez Canillas
++ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -294,15 +296,13 @@ index 0000000..4c45016
 +static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 +	u8 length, void *buf)
 +{
-+	int retval;
++	int retval = -1;
 +	int tries;
 +
 +	if (!buf || !length)
 +		return -EINVAL;
 +
-+	for (tries = 0, retval = -1;
-+	     tries < CY_NUM_RETRY && (retval < 0);
-+	     tries++) {
++	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
 +		retval = ts->bus_ops->read(ts->bus_ops, command, length, buf);
 +		if (retval)
 +			msleep(CY_DELAY_DFLT);
@@ -314,31 +314,17 @@ index 0000000..4c45016
 +static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 +	u8 length, void *buf)
 +{
-+	int retval;
++	int retval = -1;
 +	int tries;
 +
 +	if (!buf || !length)
 +		return -EINVAL;
 +
-+	for (tries = 0, retval = -1;
-+	     tries < CY_NUM_RETRY && (retval < 0);
-+	     tries++) {
++	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
 +		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
 +		if (retval)
 +			msleep(CY_DELAY_DFLT);
 +	}
-+
-+	return retval;
-+}
-+
-+static int ttsp_tch_ext(struct cyttsp *ts, void *buf)
-+{
-+	int retval;
-+
-+	if (!buf)
-+		return -EIO;
-+
-+	retval = ts->bus_ops->ext(ts->bus_ops, buf);
 +
 +	return retval;
 +}
@@ -348,6 +334,8 @@ index 0000000..4c45016
 +	int retval;
 +
 +	memset(&(ts->bl_data), 0, sizeof(struct cyttsp_bootloader_data));
++
++	ts->bl_data.bl_status = 0x10;
 +
 +	retval =  ttsp_read_block_data(ts, CY_REG_BASE,
 +		sizeof(ts->bl_data), &(ts->bl_data));
@@ -361,8 +349,10 @@ index 0000000..4c45016
 +
 +	retval = cyttsp_load_bl_regs(ts);
 +
-+	if (retval < 0)
-+		return -ENODEV;
++	if (retval < 0) {
++		retval = -ENODEV;
++		goto done;
++	}
 +
 +	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status)) {
 +		if (IS_VALID_APP(ts->bl_data.bl_status)) {
@@ -374,7 +364,9 @@ index 0000000..4c45016
 +				__func__);
 +			return -ENODEV;
 +		}
-+	} else if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
++	}
++
++	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
 +		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status))) {
 +			dev_dbg(ts->dev, "%s: Operational\n",
 +				__func__);
@@ -384,11 +376,13 @@ index 0000000..4c45016
 +				__func__);
 +			return -ENODEV;
 +		}
-+	} else {
-+		dev_dbg(ts->dev, "%s: Non-Operational failure\n",
-+			__func__);
-+			return -ENODEV;
 +	}
++
++	dev_dbg(ts->dev, "%s: Non-Operational failure\n",
++		__func__);
++	retval = -ENODEV;
++done:
++	return retval;
 +
 +}
 +
@@ -529,16 +523,15 @@ index 0000000..4c45016
 +{
 +	int retval;
 +	u8 cmd = CY_SOFT_RESET_MODE;
++	long wait_jiffies = msecs_to_jiffies(CY_DELAY_DFLT * CY_DELAY_MAX);
++	/* wait for interrupt to set ready completion */
++	INIT_COMPLETION(ts->bl_ready);
 +
 +	retval = ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), &cmd);
 +	if (retval < 0)
 +		return retval;
 +
-+	/* wait for interrupt to set ready completion */
-+	INIT_COMPLETION(ts->bl_ready);
-+
-+	retval = wait_for_completion_interruptible_timeout(&ts->bl_ready,
-+		msecs_to_jiffies(CY_DELAY_DFLT * CY_DELAY_MAX));
++	retval = wait_for_completion_timeout(&ts->bl_ready, wait_jiffies);
 +
 +	if (retval > 0)
 +		retval = 0;
@@ -565,7 +558,7 @@ index 0000000..4c45016
 +	u8 cmd;
 +
 +	cmd = hst_mode & CY_HNDSHK_BIT ?
-+		hst_mode & ~CY_HNDSHK_BIT :
++		hst_mode ^ CY_HNDSHK_BIT :
 +		hst_mode | CY_HNDSHK_BIT;
 +
 +	retval = ttsp_write_block_data(ts, CY_REG_BASE,
@@ -628,10 +621,6 @@ index 0000000..4c45016
 +	/* Get touch data from CYTTSP device */
 +	if (ttsp_read_block_data(ts,
 +		CY_REG_BASE, sizeof(struct cyttsp_xydata), &xy_data))
-+		return 0;
-+
-+	/* touch extension handling */
-+	if (ttsp_tch_ext(ts, &xy_data))
 +		return 0;
 +
 +	/* provide flow control handshake */
@@ -973,10 +962,10 @@ index 0000000..4c45016
 +
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_core.h b/drivers/input/touchscreen/cyttsp/cyttsp_core.h
 new file mode 100644
-index 0000000..feba4b6
+index 0000000..efefdb9
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_core.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,60 @@
 +/*
 + * Header file for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -986,6 +975,9 @@ index 0000000..feba4b6
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
++ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
++ *
++ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -1036,10 +1028,10 @@ index 0000000..feba4b6
 +#endif /* __CYTTSP_CORE_H__ */
 diff --git a/include/linux/input/cyttsp.h b/include/linux/input/cyttsp.h
 new file mode 100644
-index 0000000..3907bfc
+index 0000000..324344e
 --- /dev/null
 +++ b/include/linux/input/cyttsp.h
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,71 @@
 +/*
 + * Header file for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -1049,6 +1041,9 @@ index 0000000..3907bfc
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
++ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
++ *
++ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License

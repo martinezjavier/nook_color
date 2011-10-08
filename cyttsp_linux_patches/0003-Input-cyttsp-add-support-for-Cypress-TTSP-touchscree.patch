@@ -1,38 +1,36 @@
-From 6fce7f877552e0e20fe22c74384b08d99c09b89d Mon Sep 17 00:00:00 2001
+From f4678435556d4ce16ca241f45e9ad85544bf7bcb Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Wed, 5 Oct 2011 22:14:33 +0200
-Subject: [PATCH v4 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Date: Sat, 8 Oct 2011 20:24:28 +0200
+Subject: [PATCH v5 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
 
-This patch add supports for the Cypress TTSP SPI bus interface.
-
-The original author of the driver is Kevin McNeely <kev@cypress.com>
+This patch add supports for the Cypress TTSP I2C bus interface.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
 
 v2: Fix issues called out by Dmitry Torokhov
-     - Extract the IRQ from the spi client data and pass to cyttsp_core_init
+     - Extract the IRQ from the spi client data and pass to cyttsp_core_init()
      - Remove the extra retries and limit the retries to the cyttsp_core.c
        read/write block functions.
      - Cleanup cyttsp_spi_xfer(), check ACK in write operation and fix special
        EIO case to show its meaning.
 
 v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
-    - Remove bus type info since it is not used
+    - Remove bus type info since it is not used.
 
- drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  292 +++++++++++++++++++++++++
- 1 files changed, 292 insertions(+), 0 deletions(-)
+ drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  295 +++++++++++++++++++++++++
+ 1 files changed, 295 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_spi.c b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 new file mode 100644
-index 0000000..5567859
+index 0000000..66d6dc3
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,295 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) SPI touchscreen driver.
@@ -42,6 +40,9 @@ index 0000000..5567859
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
++ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
++ *
++ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
