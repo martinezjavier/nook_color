@@ -9,7 +9,7 @@
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
  * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
  *
- * Multi-touch protocol type B support by Javier Martinez Canillas
+ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -162,15 +162,13 @@ static const u8 bl_command[] = {
 static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 	u8 length, void *buf)
 {
-	int retval;
+	int retval = -1;
 	int tries;
 
 	if (!buf || !length)
 		return -EINVAL;
 
-	for (tries = 0, retval = -1;
-	     tries < CY_NUM_RETRY && (retval < 0);
-	     tries++) {
+	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
 		retval = ts->bus_ops->read(ts->bus_ops, command, length, buf);
 		if (retval)
 			msleep(CY_DELAY_DFLT);
@@ -182,31 +180,17 @@ static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 	u8 length, void *buf)
 {
-	int retval;
+	int retval = -1;
 	int tries;
 
 	if (!buf || !length)
 		return -EINVAL;
 
-	for (tries = 0, retval = -1;
-	     tries < CY_NUM_RETRY && (retval < 0);
-	     tries++) {
+	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
 		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
 		if (retval)
 			msleep(CY_DELAY_DFLT);
 	}
-
-	return retval;
-}
-
-static int ttsp_tch_ext(struct cyttsp *ts, void *buf)
-{
-	int retval;
-
-	if (!buf)
-		return -EIO;
-
-	retval = ts->bus_ops->ext(ts->bus_ops, buf);
 
 	return retval;
 }
@@ -216,6 +200,8 @@ static int cyttsp_load_bl_regs(struct cyttsp *ts)
 	int retval;
 
 	memset(&(ts->bl_data), 0, sizeof(struct cyttsp_bootloader_data));
+
+	ts->bl_data.bl_status = 0x10;
 
 	retval =  ttsp_read_block_data(ts, CY_REG_BASE,
 		sizeof(ts->bl_data), &(ts->bl_data));
@@ -229,8 +215,10 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 
 	retval = cyttsp_load_bl_regs(ts);
 
-	if (retval < 0)
-		return -ENODEV;
+	if (retval < 0) {
+		retval = -ENODEV;
+		goto done;
+	}
 
 	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status)) {
 		if (IS_VALID_APP(ts->bl_data.bl_status)) {
@@ -242,7 +230,9 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 				__func__);
 			return -ENODEV;
 		}
-	} else if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
+	}
+
+	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
 		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status))) {
 			dev_dbg(ts->dev, "%s: Operational\n",
 				__func__);
@@ -252,11 +242,13 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 				__func__);
 			return -ENODEV;
 		}
-	} else {
-		dev_dbg(ts->dev, "%s: Non-Operational failure\n",
-			__func__);
-			return -ENODEV;
 	}
+
+	dev_dbg(ts->dev, "%s: Non-Operational failure\n",
+		__func__);
+	retval = -ENODEV;
+done:
+	return retval;
 
 }
 
@@ -397,16 +389,15 @@ static int cyttsp_soft_reset(struct cyttsp *ts)
 {
 	int retval;
 	u8 cmd = CY_SOFT_RESET_MODE;
+	long wait_jiffies = msecs_to_jiffies(CY_DELAY_DFLT * CY_DELAY_MAX);
+	/* wait for interrupt to set ready completion */
+	INIT_COMPLETION(ts->bl_ready);
 
 	retval = ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), &cmd);
 	if (retval < 0)
 		return retval;
 
-	/* wait for interrupt to set ready completion */
-	INIT_COMPLETION(ts->bl_ready);
-
-	retval = wait_for_completion_interruptible_timeout(&ts->bl_ready,
-		msecs_to_jiffies(CY_DELAY_DFLT * CY_DELAY_MAX));
+	retval = wait_for_completion_timeout(&ts->bl_ready, wait_jiffies);
 
 	if (retval > 0)
 		retval = 0;
@@ -433,7 +424,7 @@ static int cyttsp_hndshk(struct cyttsp *ts, u8 hst_mode)
 	u8 cmd;
 
 	cmd = hst_mode & CY_HNDSHK_BIT ?
-		hst_mode & ~CY_HNDSHK_BIT :
+		hst_mode ^ CY_HNDSHK_BIT :
 		hst_mode | CY_HNDSHK_BIT;
 
 	retval = ttsp_write_block_data(ts, CY_REG_BASE,
@@ -496,10 +487,6 @@ static int cyttsp_handle_tchdata(struct cyttsp *ts)
 	/* Get touch data from CYTTSP device */
 	if (ttsp_read_block_data(ts,
 		CY_REG_BASE, sizeof(struct cyttsp_xydata), &xy_data))
-		return 0;
-
-	/* touch extension handling */
-	if (ttsp_tch_ext(ts, &xy_data))
 		return 0;
 
 	/* provide flow control handshake */
