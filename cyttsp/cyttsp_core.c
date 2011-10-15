@@ -70,7 +70,7 @@
 
 /* Slots management */
 #define CY_MAX_FINGER               4
-#define CY_MAX_ID                   15
+#define CY_MAX_ID                   16
 
 struct cyttsp_tch {
 	__be16 x, y;
@@ -197,16 +197,12 @@ static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 
 static int cyttsp_load_bl_regs(struct cyttsp *ts)
 {
-	int retval;
-
 	memset(&(ts->bl_data), 0, sizeof(struct cyttsp_bootloader_data));
 
 	ts->bl_data.bl_status = 0x10;
 
-	retval =  ttsp_read_block_data(ts, CY_REG_BASE,
-		sizeof(ts->bl_data), &(ts->bl_data));
-
-	return retval;
+	return  ttsp_read_block_data(ts, CY_REG_BASE, sizeof(ts->bl_data),
+				     &ts->bl_data);
 }
 
 static int cyttsp_bl_app_valid(struct cyttsp *ts)
@@ -221,35 +217,22 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 	}
 
 	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status)) {
-		if (IS_VALID_APP(ts->bl_data.bl_status)) {
-			dev_dbg(ts->dev, "%s: App found; normal boot\n",
-				__func__);
+		if (IS_VALID_APP(ts->bl_data.bl_status))
 			return 0;
-		} else {
-			dev_dbg(ts->dev, "%s: NO APP; load firmware!!\n",
-				__func__);
+		else
 			return -ENODEV;
-		}
 	}
 
 	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
-		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status))) {
-			dev_dbg(ts->dev, "%s: Operational\n",
-				__func__);
+		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status)))
 			return 1;
-		} else {
-			dev_dbg(ts->dev, "%s: Operational failure\n",
-				__func__);
+		else
 			return -ENODEV;
-		}
 	}
 
-	dev_dbg(ts->dev, "%s: Non-Operational failure\n",
-		__func__);
 	retval = -ENODEV;
 done:
 	return retval;
-
 }
 
 static int cyttsp_exit_bl_mode(struct cyttsp *ts)
@@ -263,15 +246,9 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 		memcpy(&bl_cmd[sizeof(bl_command) - CY_NUM_BL_KEYS],
 			ts->platform_data->bl_keys, sizeof(bl_command));
 
-	dev_dbg(ts->dev,
-		"%s: bl_cmd= "
-		"%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
-		__func__, bl_cmd[0], bl_cmd[1], bl_cmd[2],
-		bl_cmd[3], bl_cmd[4], bl_cmd[5], bl_cmd[6],
-		bl_cmd[7], bl_cmd[8], bl_cmd[9], bl_cmd[10]);
-
 	retval = ttsp_write_block_data(ts, CY_REG_BASE,
 		sizeof(bl_cmd), (void *)bl_cmd);
+
 	if (retval < 0)
 		return retval;
 
@@ -280,26 +257,20 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 	do {
 		msleep(CY_DELAY_DFLT);
 		retval = cyttsp_load_bl_regs(ts);
-	} while (!((retval == 0) &&
-		!GET_BOOTLOADERMODE(ts->bl_data.bl_status)) &&
+	} while ((retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status)) &&
 		(tries++ < CY_DELAY_MAX));
 
-	dev_dbg(ts->dev, "%s: check bl ready tries=%d ret=%d stat=%02X\n",
-		__func__, tries, retval, ts->bl_data.bl_status);
-
-	if (retval < 0)
-		return retval;
-	else if (GET_BOOTLOADERMODE(ts->bl_data.bl_status))
+	if (tries >= CY_DELAY_MAX)
 		return -ENODEV;
-	else
-		return 0;
+
+	return retval;
 }
 
 static int cyttsp_set_operational_mode(struct cyttsp *ts)
 {
 	struct cyttsp_xydata xy_data;
 	int retval;
-	int tries;
+	int tries = 0;
 	u8 cmd = CY_OPERATE_MODE;
 
 	retval = ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), &cmd);
@@ -308,16 +279,14 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 		return retval;
 
 	/* wait for TTSP Device to complete switch to Operational mode */
-	tries = 0;
 	do {
 		retval = ttsp_read_block_data(ts, CY_REG_BASE,
 			sizeof(xy_data), &(xy_data));
-	} while (!((retval == 0) &&
-		(xy_data.act_dist == CY_ACT_DIST_DFLT)) &&
-		(tries++ < CY_DELAY_MAX));
+	} while ((retval || xy_data.act_dist != CY_ACT_DIST_DFLT) &&
+		 (tries++ < CY_DELAY_MAX));
 
-	dev_dbg(ts->dev, "%s: check op ready tries=%d ret=%d dist=%02X\n",
-		__func__, tries, retval, xy_data.act_dist);
+	if (tries >= CY_DELAY_MAX)
+		return -EAGAIN;
 
 	return retval;
 }
@@ -340,22 +309,13 @@ static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 	do {
 		msleep(CY_DELAY_DFLT);
 		retval = ttsp_read_block_data(ts, CY_REG_BASE,
-			sizeof(ts->sysinfo_data), &(ts->sysinfo_data));
-	} while (!((retval == 0) &&
-		!((ts->sysinfo_data.tts_verh == 0) &&
-		(ts->sysinfo_data.tts_verl == 0))) &&
-		(tries++ < CY_DELAY_MAX));
+			sizeof(ts->sysinfo_data), &ts->sysinfo_data);
+	} while ((retval || (!ts->sysinfo_data.tts_verh &&
+			     !ts->sysinfo_data.tts_verl)) &&
+		 (tries++ < CY_DELAY_MAX));
 
-	dev_dbg(ts->dev, "%s: check sysinfo ready tries=%d ret=%d\n",
-		__func__, tries, retval);
-
-	dev_info(ts->dev, "%s: tv=%02X%02X ai=0x%02X%02X "
-		"av=0x%02X%02X ci=0x%02X%02X%02X\n", "cyttsp",
-		ts->sysinfo_data.tts_verh, ts->sysinfo_data.tts_verl,
-		ts->sysinfo_data.app_idh, ts->sysinfo_data.app_idl,
-		ts->sysinfo_data.app_verh, ts->sysinfo_data.app_verl,
-		ts->sysinfo_data.cid[0], ts->sysinfo_data.cid[1],
-		ts->sysinfo_data.cid[2]);
+	if (tries >= CY_DELAY_MAX)
+		return -EAGAIN;
 
 	return retval;
 }
@@ -397,12 +357,7 @@ static int cyttsp_soft_reset(struct cyttsp *ts)
 	if (retval < 0)
 		return retval;
 
-	retval = wait_for_completion_timeout(&ts->bl_ready, wait_jiffies);
-
-	if (retval > 0)
-		retval = 0;
-
-	return retval;
+	return wait_for_completion_timeout(&ts->bl_ready, wait_jiffies);
 }
 
 static int cyttsp_act_dist_setup(struct cyttsp *ts)
@@ -420,17 +375,11 @@ static int cyttsp_act_dist_setup(struct cyttsp *ts)
 
 static int cyttsp_hndshk(struct cyttsp *ts, u8 hst_mode)
 {
-	int retval;
 	u8 cmd;
 
-	cmd = hst_mode & CY_HNDSHK_BIT ?
-		hst_mode ^ CY_HNDSHK_BIT :
-		hst_mode | CY_HNDSHK_BIT;
+	cmd = hst_mode ^ CY_HNDSHK_BIT;
 
-	retval = ttsp_write_block_data(ts, CY_REG_BASE,
-		sizeof(cmd), (u8 *)&cmd);
-
-	return retval;
+	return ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), (u8 *)&cmd);
 }
 
 static void cyttsp_report_slot(struct input_dev *dev, int slot,
@@ -601,7 +550,7 @@ static int cyttsp_power_on(struct cyttsp *ts)
 		goto bypass;
 
 	retval = cyttsp_soft_reset(ts);
-	if (retval < 0)
+	if (retval == 0)
 		goto bypass;
 
 	retval = cyttsp_bl_app_valid(ts);
@@ -650,31 +599,27 @@ int cyttsp_resume(void *handle)
 	int retval = 0;
 	struct cyttsp_xydata xydata;
 
-	if (ts) {
-		if (ts->platform_data->use_sleep && (ts->power_state !=
-						     CY_ACTIVE_STATE)) {
-			if (ts->platform_data->wakeup) {
-				retval = ts->platform_data->wakeup();
-				if (retval < 0)
-					dev_dbg(ts->dev, "%s: Error, wakeup failed!\n",
-						__func__);
-			} else {
-				dev_dbg(ts->dev, "%s: Error, wakeup not implemented "
-					"(check board file).\n", __func__);
-				retval = -ENOSYS;
-			}
-			if (!(retval < 0)) {
-				retval = ttsp_read_block_data(ts, CY_REG_BASE,
-							      sizeof(xydata),
-							      &xydata);
-				if (!(retval < 0) &&
-				    !GET_HSTMODE(xydata.hst_mode))
-					ts->power_state = CY_ACTIVE_STATE;
-			}
+	if (!ts)
+		return retval;
+
+	if (ts->platform_data->use_sleep && (ts->power_state !=
+					     CY_ACTIVE_STATE)) {
+
+		if (ts->platform_data->wakeup)
+			retval = ts->platform_data->wakeup();
+		else
+			retval = -ENOSYS;
+
+		if (retval >= 0) {
+			retval = ttsp_read_block_data(ts, CY_REG_BASE,
+						      sizeof(xydata),
+						      &xydata);
+			if (retval >= 0 &&
+			    !GET_HSTMODE(xydata.hst_mode))
+				ts->power_state = CY_ACTIVE_STATE;
 		}
-		dev_dbg(ts->dev, "%s: Wake Up %s\n", __func__,
-			(retval < 0) ? "FAIL" : "PASS");
 	}
+
 	return retval;
 }
 EXPORT_SYMBOL_GPL(cyttsp_resume);
@@ -690,14 +635,10 @@ int cyttsp_suspend(void *handle)
 		sleep_mode = ts->platform_data->use_sleep;
 		retval = ttsp_write_block_data(ts,
 			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
-		if (!(retval < 0))
+		if (retval >= 0)
 			ts->power_state = CY_SLEEP_STATE;
 	}
-	dev_dbg(ts->dev, "%s: Sleep Power state is %s\n", __func__,
-		(ts->power_state == CY_ACTIVE_STATE) ?
-		"ACTIVE" :
-		((ts->power_state == CY_SLEEP_STATE) ?
-		"SLEEP" : "LOW POWER"));
+
 	return retval;
 }
 EXPORT_SYMBOL_GPL(cyttsp_suspend);
