@@ -55,7 +55,7 @@ static s32 ttsp_i2c_read_block_data(void *handle, u8 addr,
 
 	retval = i2c_master_recv(ts->client, values, length);
 
-	if (retval != length)
+	if (retval > 0 && != length)
 		return -EIO;
 
 	return (retval < 0) ? retval : 0;
