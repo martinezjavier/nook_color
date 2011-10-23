@@ -1,7 +1,7 @@
-From f4678435556d4ce16ca241f45e9ad85544bf7bcb Mon Sep 17 00:00:00 2001
+From 84fcd513efabad97dbbb574cb999088fa21abcec Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sat, 8 Oct 2011 20:23:56 +0200
-Subject: [PATCH v6 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Date: Sat, 23 Oct 2011 20:17:28 +0200
+Subject: [PATCH v7 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -10,6 +10,7 @@ This patch add supports for the Cypress TTSP SPI bus interface.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
+
 v2: Fix issues called out by Dmitry Torokhov
      - Extract the IRQ from the spi client data and pass to cyttsp_core_init()
      - Remove the extra retries and limit the retries to the cyttsp_core.c
@@ -20,16 +21,20 @@ v2: Fix issues called out by Dmitry Torokhov
 v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
     - Remove bus type info since it is not used.
 
- drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  295 +++++++++++++++++++++++++
- 1 files changed, 295 insertions(+), 0 deletions(-)
+v7: Fix issues called out by Shubhrajyoti Datta
+    - Remove unused ttsp_spi_tch_ext() function to handle extended touch data.
+    - Move cyttsp_spi_[suspend | resume]() functions to dev pm ops.
+
+ drivers/input/touchscreen/cyttsp/cyttsp_spi.c |  275 +++++++++++++++++++++++++
+ 1 files changed, 275 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 
 diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_spi.c b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
 new file mode 100644
-index 0000000..66d6dc3
+index 0000000..95dc7c8
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp/cyttsp_spi.c
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,275 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) SPI touchscreen driver.
@@ -211,25 +216,6 @@ index 0000000..66d6dc3
 +	return retval;
 +}
 +
-+static s32 ttsp_spi_tch_ext(void *handle, void *values)
-+{
-+	struct cyttsp_spi *ts =
-+		container_of(handle, struct cyttsp_spi, bus_ops);
-+	int retval = 0;
-+
-+	/*
-+	 * TODO: Add custom touch extension handling code here
-+	 * set: retval < 0 for any returned system errors,
-+	 *	retval = 0 if normal touch handling is required,
-+	 *	retval > 0 if normal touch handling is *not* required
-+	 */
-+
-+	if (!ts || !values)
-+		retval = -EINVAL;
-+
-+	return retval;
-+}
-+
 +static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 +{
 +	struct cyttsp_spi *ts;
@@ -255,7 +241,6 @@ index 0000000..66d6dc3
 +	dev_set_drvdata(&spi->dev, ts);
 +	ts->bus_ops.write = ttsp_spi_write_block_data;
 +	ts->bus_ops.read = ttsp_spi_read_block_data;
-+	ts->bus_ops.ext = ttsp_spi_tch_ext;
 +	ts->bus_ops.dev = &spi->dev;
 +
 +	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev, spi->irq);
@@ -280,32 +265,32 @@ index 0000000..66d6dc3
 +}
 +
 +#ifdef CONFIG_PM
-+static int cyttsp_spi_suspend(struct spi_device *spi, pm_message_t message)
++static int cyttsp_spi_suspend(struct device *dev)
 +{
-+	struct cyttsp_spi *ts = dev_get_drvdata(&spi->dev);
++	struct cyttsp_spi *ts = dev_get_drvdata(dev);
 +
 +	return cyttsp_suspend(ts->ttsp_client);
 +}
 +
-+static int cyttsp_spi_resume(struct spi_device *spi)
++static int cyttsp_spi_resume(struct device *dev)
 +{
-+	struct cyttsp_spi *ts = dev_get_drvdata(&spi->dev);
++	struct cyttsp_spi *ts = dev_get_drvdata(dev);
 +
 +	return cyttsp_resume(ts->ttsp_client);
 +}
++static SIMPLE_DEV_PM_OPS(cyttsp_spi_pm, cyttsp_spi_suspend, cyttsp_spi_resume);
 +#endif
 +
 +static struct spi_driver cyttsp_spi_driver = {
 +	.driver = {
 +		.name = CY_SPI_NAME,
 +		.owner = THIS_MODULE,
++#ifdef CONFIG_PM
++		.pm = &cyttsp_spi_pm,
++#endif
 +	},
 +	.probe = cyttsp_spi_probe,
 +	.remove = __devexit_p(cyttsp_spi_remove),
-+#ifdef CONFIG_PM
-+	.suspend = cyttsp_spi_suspend,
-+	.resume = cyttsp_spi_resume,
-+#endif
 +};
 +
 +static int __init cyttsp_spi_init(void)
