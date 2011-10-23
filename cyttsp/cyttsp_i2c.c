@@ -55,6 +55,9 @@ static s32 ttsp_i2c_read_block_data(void *handle, u8 addr,
 
 	retval = i2c_master_recv(ts->client, values, length);
 
+	if (retval != length)
+		return -EIO;
+
 	return (retval < 0) ? retval : 0;
 }
 
@@ -69,24 +72,10 @@ static s32 ttsp_i2c_write_block_data(void *handle, u8 addr,
 
 	retval = i2c_master_send(ts->client, ts->wr_buf, length+1);
 
+	if (retval != length)
+		return -EIO;
+
 	return (retval < 0) ? retval : 0;
-}
-
-static s32 ttsp_i2c_tch_ext(void *handle, void *values)
-{
-	struct cyttsp_i2c *ts = container_of(handle, struct cyttsp_i2c, ops);
-	int retval = 0;
-
-	/*
-	 * TODO: Add custom touch extension handling code here
-	 * set: retval < 0 for any returned system errors,
-	 *	retval = 0 if normal touch handling is required,
-	 *	retval > 0 if normal touch handling is *not* required
-	 */
-	if (!ts || !values)
-		retval = -EINVAL;
-
-	return retval;
 }
 
 static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
@@ -109,7 +98,6 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, ts);
 	ts->ops.write = ttsp_i2c_write_block_data;
 	ts->ops.read = ttsp_i2c_read_block_data;
-	ts->ops.ext = ttsp_i2c_tch_ext;
 	ts->ops.dev = &client->dev;
 
 	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev, client->irq);
@@ -118,8 +106,6 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 		kfree(ts);
 		return retval;
 	}
-
-	dev_dbg(ts->ops.dev, "%s: Registration complete\n", __func__);
 
 	return 0;
 }
@@ -137,19 +123,22 @@ static int __devexit cyttsp_i2c_remove(struct i2c_client *client)
 }
 
 #ifdef CONFIG_PM
-static int cyttsp_i2c_suspend(struct i2c_client *client, pm_message_t message)
+static int cyttsp_i2c_suspend(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
 
 	return cyttsp_suspend(ts->ttsp_client);
 }
 
-static int cyttsp_i2c_resume(struct i2c_client *client)
+static int cyttsp_i2c_resume(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
 
 	return cyttsp_resume(ts->ttsp_client);
 }
+static SIMPLE_DEV_PM_OPS(cyttsp_i2c_pm, cyttsp_i2c_suspend, cyttsp_i2c_resume);
 #endif
 
 static const struct i2c_device_id cyttsp_i2c_id[] = {
@@ -160,14 +149,13 @@ static struct i2c_driver cyttsp_i2c_driver = {
 	.driver = {
 		.name = CY_I2C_NAME,
 		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &cyttsp_i2c_pm,
+#endif
 	},
 	.probe = cyttsp_i2c_probe,
 	.remove = __devexit_p(cyttsp_i2c_remove),
 	.id_table = cyttsp_i2c_id,
-#ifdef CONFIG_PM
-	.suspend = cyttsp_i2c_suspend,
-	.resume = cyttsp_i2c_resume,
-#endif
 };
 
 static int __init cyttsp_i2c_init(void)

@@ -179,25 +179,6 @@ static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
 	return retval;
 }
 
-static s32 ttsp_spi_tch_ext(void *handle, void *values)
-{
-	struct cyttsp_spi *ts =
-		container_of(handle, struct cyttsp_spi, bus_ops);
-	int retval = 0;
-
-	/*
-	 * TODO: Add custom touch extension handling code here
-	 * set: retval < 0 for any returned system errors,
-	 *	retval = 0 if normal touch handling is required,
-	 *	retval > 0 if normal touch handling is *not* required
-	 */
-
-	if (!ts || !values)
-		retval = -EINVAL;
-
-	return retval;
-}
-
 static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 {
 	struct cyttsp_spi *ts;
@@ -223,7 +204,6 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 	dev_set_drvdata(&spi->dev, ts);
 	ts->bus_ops.write = ttsp_spi_write_block_data;
 	ts->bus_ops.read = ttsp_spi_read_block_data;
-	ts->bus_ops.ext = ttsp_spi_tch_ext;
 	ts->bus_ops.dev = &spi->dev;
 
 	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev, spi->irq);
@@ -248,32 +228,32 @@ static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 }
 
 #ifdef CONFIG_PM
-static int cyttsp_spi_suspend(struct spi_device *spi, pm_message_t message)
+static int cyttsp_spi_suspend(struct device *dev)
 {
-	struct cyttsp_spi *ts = dev_get_drvdata(&spi->dev);
+	struct cyttsp_spi *ts = dev_get_drvdata(dev);
 
 	return cyttsp_suspend(ts->ttsp_client);
 }
 
-static int cyttsp_spi_resume(struct spi_device *spi)
+static int cyttsp_spi_resume(struct device *dev)
 {
-	struct cyttsp_spi *ts = dev_get_drvdata(&spi->dev);
+	struct cyttsp_spi *ts = dev_get_drvdata(dev);
 
 	return cyttsp_resume(ts->ttsp_client);
 }
+static SIMPLE_DEV_PM_OPS(cyttsp_spi_pm, cyttsp_spi_suspend, cyttsp_spi_resume);
 #endif
 
 static struct spi_driver cyttsp_spi_driver = {
 	.driver = {
 		.name = CY_SPI_NAME,
 		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &cyttsp_spi_pm,
+#endif
 	},
 	.probe = cyttsp_spi_probe,
 	.remove = __devexit_p(cyttsp_spi_remove),
-#ifdef CONFIG_PM
-	.suspend = cyttsp_spi_suspend,
-	.resume = cyttsp_spi_resume,
-#endif
 };
 
 static int __init cyttsp_spi_init(void)
