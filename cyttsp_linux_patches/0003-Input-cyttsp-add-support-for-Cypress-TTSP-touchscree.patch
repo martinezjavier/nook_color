@@ -1,16 +1,15 @@
 From f4678435556d4ce16ca241f45e9ad85544bf7bcb Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sat, 8 Oct 2011 20:24:28 +0200
-Subject: [PATCH v5 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Date: Sat, 8 Oct 2011 20:23:56 +0200
+Subject: [PATCH v6 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
 
-This patch add supports for the Cypress TTSP I2C bus interface.
+This patch add supports for the Cypress TTSP SPI bus interface.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
-
 v2: Fix issues called out by Dmitry Torokhov
      - Extract the IRQ from the spi client data and pass to cyttsp_core_init()
      - Remove the extra retries and limit the retries to the cyttsp_core.c
