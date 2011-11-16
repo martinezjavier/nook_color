@@ -44,7 +44,6 @@
 struct cyttsp_bus_ops {
 	s32 (*write)(void *handle, u8 addr, u8 length, const void *values);
 	s32 (*read)(void *handle, u8 addr, u8 length, void *values);
-	s32 (*ext)(void *handle, void *values);
 	struct device *dev;
 };
 
