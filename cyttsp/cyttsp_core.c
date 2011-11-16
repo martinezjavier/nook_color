@@ -660,7 +660,6 @@ void cyttsp_core_release(void *handle)
 		input_unregister_device(ts->input);
 		if (ts->platform_data->exit)
 			ts->platform_data->exit();
-		input_mt_destroy_slots(ts->input);
 		kfree(ts);
 	}
 }
