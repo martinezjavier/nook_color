@@ -51,7 +51,7 @@ void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
 		       struct device *dev, int irq);
 
 void cyttsp_core_release(void *handle);
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 int cyttsp_resume(void *handle);
 int cyttsp_suspend(void *handle);
 #endif

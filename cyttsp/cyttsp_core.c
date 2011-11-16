@@ -592,7 +592,7 @@ bypass:
 	return retval;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 int cyttsp_resume(void *handle)
 {
 	struct cyttsp *ts = handle;

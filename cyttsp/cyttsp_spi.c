@@ -227,7 +227,7 @@ static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int cyttsp_spi_suspend(struct device *dev)
 {
 	struct cyttsp_spi *ts = dev_get_drvdata(dev);
@@ -241,16 +241,15 @@ static int cyttsp_spi_resume(struct device *dev)
 
 	return cyttsp_resume(ts->ttsp_client);
 }
-static SIMPLE_DEV_PM_OPS(cyttsp_spi_pm, cyttsp_spi_suspend, cyttsp_spi_resume);
 #endif
+
+static SIMPLE_DEV_PM_OPS(cyttsp_spi_pm, cyttsp_spi_suspend, cyttsp_spi_resume);
 
 static struct spi_driver cyttsp_spi_driver = {
 	.driver = {
 		.name = CY_SPI_NAME,
 		.owner = THIS_MODULE,
-#ifdef CONFIG_PM
 		.pm = &cyttsp_spi_pm,
-#endif
 	},
 	.probe = cyttsp_spi_probe,
 	.remove = __devexit_p(cyttsp_spi_remove),
