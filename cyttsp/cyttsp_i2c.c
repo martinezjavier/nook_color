@@ -32,6 +32,7 @@
 #include "cyttsp_core.h"
 
 #include <linux/i2c.h>
+#include <linux/input.h>
 #include <linux/slab.h>
 
 #define CY_I2C_DATA_SIZE  128
@@ -80,6 +81,7 @@ static int ttsp_i2c_write_block_data(struct device *dev,
 }
 
 static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
+	.bustype        = BUS_I2C,
 	.write          = ttsp_i2c_write_block_data,
 	.read           = ttsp_i2c_read_block_data,
 };

@@ -719,18 +719,17 @@ void *cyttsp_core_init(const struct cyttsp_bus_ops *bus_ops,
 	}
 
 	ts->input = input_device;
+	snprintf(ts->phys, sizeof(ts->phys), "%s/input0", dev_name(dev));
+
 	input_device->name = ts->platform_data->name;
-	snprintf(ts->phys, sizeof(ts->phys), "%s", dev_name(dev));
 	input_device->phys = ts->phys;
+	input_device->id.bustype = bus_ops->bustype;
 	input_device->dev.parent = ts->dev;
 	input_device->open = cyttsp_open;
 	input_device->close = cyttsp_close;
 	input_set_drvdata(input_device, ts);
 
-	__set_bit(EV_SYN, input_device->evbit);
-	__set_bit(EV_KEY, input_device->evbit);
 	__set_bit(EV_ABS, input_device->evbit);
-
 	input_set_abs_params(input_device, ABS_MT_POSITION_X,
 			     0, ts->platform_data->maxx, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_POSITION_Y,

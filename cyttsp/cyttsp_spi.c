@@ -31,8 +31,9 @@
 
 #include "cyttsp_core.h"
 
-#include <linux/spi/spi.h>
 #include <linux/delay.h>
+#include <linux/input.h>
+#include <linux/spi/spi.h>
 
 #define CY_SPI_WR_OP      0x00 /* r/~w */
 #define CY_SPI_RD_OP      0x01
@@ -179,6 +180,7 @@ static int ttsp_spi_write_block_data(struct device *dev,
 }
 
 static const struct cyttsp_bus_ops cyttsp_spi_bus_ops = {
+	.bustype        = BUS_SPI,
 	.write          = ttsp_spi_write_block_data,
 	.read           = ttsp_spi_read_block_data,
 };

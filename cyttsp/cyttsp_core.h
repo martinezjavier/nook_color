@@ -36,12 +36,14 @@
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/module.h>
+#include <linux/types.h>
 #include <linux/input/cyttsp.h>
 
 #define CY_NUM_RETRY                4 /* max number of retries for read ops */
 
 
 struct cyttsp_bus_ops {
+       u16 bustype;
        int (*write)(struct device *dev,
                     u8 addr, u8 length, const void *values);
        int (*read)(struct device *dev, u8 addr, u8 length, void *values);
