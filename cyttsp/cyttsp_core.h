@@ -42,12 +42,12 @@
 
 
 struct cyttsp_bus_ops {
-	s32 (*write)(void *handle, u8 addr, u8 length, const void *values);
-	s32 (*read)(void *handle, u8 addr, u8 length, void *values);
-	struct device *dev;
+       int (*write)(struct device *dev,
+                    u8 addr, u8 length, const void *values);
+       int (*read)(struct device *dev, u8 addr, u8 length, void *values);
 };
 
-void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
+void *cyttsp_core_init(const struct cyttsp_bus_ops *bus_ops,
 		       struct device *dev, int irq);
 
 void cyttsp_core_release(void *handle);

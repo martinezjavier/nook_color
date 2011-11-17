@@ -45,8 +45,7 @@
 #define CY_SPI_BITS_PER_WORD 8
 
 struct cyttsp_spi {
-	struct cyttsp_bus_ops bus_ops;
-	struct spi_device *spi_client;
+	struct spi_device *spi;
 	void *ttsp_client;
 	u8 wr_buf[CY_SPI_DATA_BUF_SIZE];
 	u8 rd_buf[CY_SPI_DATA_BUF_SIZE];
@@ -62,7 +61,7 @@ static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
 	int retval;
 
 	if (length > CY_SPI_DATA_SIZE) {
-		dev_dbg(ts->bus_ops.dev,
+		dev_dbg(&ts->spi->dev,
 			"%s: length %d is too big.\n",
 			__func__, length);
 		return -EINVAL;
@@ -99,9 +98,9 @@ static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
 		spi_message_add_tail(&xfer[1], &msg);
 	}
 
-	retval = spi_sync(ts->spi_client, &msg);
+	retval = spi_sync(ts->spi, &msg);
 	if (retval < 0) {
-		dev_dbg(ts->bus_ops.dev,
+		dev_dbg(&ts->spi->dev,
 			"%s: spi_sync() error %d, len=%d, op=%d\n",
 			__func__, retval, xfer[1].len, op);
 
@@ -118,11 +117,11 @@ static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
 	else {
 		int i;
 		for (i = 0; i < (CY_SPI_CMD_BYTES); i++)
-			dev_dbg(ts->bus_ops.dev,
+			dev_dbg(&ts->sp->dev,
 				"%s: test rd_buf[%d]:0x%02x\n",
 				__func__, i, rd_buf[i]);
 		for (i = 0; i < (length); i++)
-			dev_dbg(ts->bus_ops.dev,
+			dev_dbg(&ts->spi->dev,
 				"%s: test buf[%d]:0x%02x\n",
 				__func__, i, buf[i]);
 
@@ -133,11 +132,11 @@ static int cyttsp_spi_xfer(u8 op, struct cyttsp_spi *ts,
 	return retval;
 }
 
-static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
-				    u8 length, void *data)
+static int ttsp_spi_read_block_data(struct device *dev,
+				    u8 addr, u8 length, void *data)
 {
-	struct cyttsp_spi *ts =
-		container_of(handle, struct cyttsp_spi, bus_ops);
+	struct spi_device *spi = to_spi_device(dev);
+	struct cyttsp_spi *ts = spi_get_drvdata(spi);
 	int retval;
 
 	retval = cyttsp_spi_xfer(CY_SPI_RD_OP, ts, addr, data, length);
@@ -156,11 +155,11 @@ static s32 ttsp_spi_read_block_data(void *handle, u8 addr,
 	return retval;
 }
 
-static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
-				     u8 length, const void *data)
+static int ttsp_spi_write_block_data(struct device *dev,
+				     u8 addr, u8 length, const void *data)
 {
-	struct cyttsp_spi *ts =
-		container_of(handle, struct cyttsp_spi, bus_ops);
+	struct spi_device *spi = to_spi_device(dev);
+	struct cyttsp_spi *ts = spi_get_drvdata(spi);
 	int retval;
 
 	retval = cyttsp_spi_xfer(CY_SPI_WR_OP, ts, addr, (void *)data, length);
@@ -178,6 +177,11 @@ static s32 ttsp_spi_write_block_data(void *handle, u8 addr,
 
 	return retval;
 }
+
+static const struct cyttsp_bus_ops cyttsp_spi_bus_ops = {
+	.write          = ttsp_spi_write_block_data,
+	.read           = ttsp_spi_read_block_data,
+};
 
 static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 {
@@ -200,30 +204,29 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 		return -ENOMEM;
 	}
 
-	ts->spi_client = spi;
-	dev_set_drvdata(&spi->dev, ts);
-	ts->bus_ops.write = ttsp_spi_write_block_data;
-	ts->bus_ops.read = ttsp_spi_read_block_data;
-	ts->bus_ops.dev = &spi->dev;
+	ts->spi = spi;
+	spi_set_drvdata(spi, ts);
 
-	ts->ttsp_client = cyttsp_core_init(&ts->bus_ops, &spi->dev, spi->irq);
+	ts->ttsp_client = cyttsp_core_init(&cyttsp_spi_bus_ops, &spi->dev,
+					   spi->irq);
 	if (IS_ERR(ts->ttsp_client)) {
 		int retval = PTR_ERR(ts->ttsp_client);
 		kfree(ts);
 		return retval;
 	}
 
-	dev_dbg(ts->bus_ops.dev, "%s: Registration complete\n", __func__);
+	dev_dbg(&ts->spi->dev, "%s: Registration complete\n", __func__);
 
 	return 0;
 }
 
 static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 {
-	struct cyttsp_spi *ts = dev_get_drvdata(&spi->dev);
+	struct cyttsp_spi *ts = dev_get_drvdata(&spi);
 
 	cyttsp_core_release(ts->ttsp_client);
 	kfree(ts);
+
 	return 0;
 }
 

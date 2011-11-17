@@ -37,16 +37,16 @@
 #define CY_I2C_DATA_SIZE  128
 
 struct cyttsp_i2c {
-	struct cyttsp_bus_ops ops;
 	struct i2c_client *client;
 	void *ttsp_client;
 	u8 wr_buf[CY_I2C_DATA_SIZE];
 };
 
-static s32 ttsp_i2c_read_block_data(void *handle, u8 addr,
-	u8 length, void *values)
+static int ttsp_i2c_read_block_data(struct device *dev,
+				    u8 addr, u8 length, void *values)
 {
-	struct cyttsp_i2c *ts = container_of(handle, struct cyttsp_i2c, ops);
+	struct i2c_client *client = to_i2c_client(dev);
+	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
 	int retval = 0;
 
 	retval = i2c_master_send(ts->client, &addr, 1);
@@ -61,10 +61,11 @@ static s32 ttsp_i2c_read_block_data(void *handle, u8 addr,
 	return (retval < 0) ? retval : 0;
 }
 
-static s32 ttsp_i2c_write_block_data(void *handle, u8 addr,
-	u8 length, const void *values)
+static int ttsp_i2c_write_block_data(struct device *dev,
+				     u8 addr, u8 length, const void *values)
 {
-	struct cyttsp_i2c *ts = container_of(handle, struct cyttsp_i2c, ops);
+	struct i2c_client *client = to_i2c_client(dev);
+	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
 	int retval;
 
 	ts->wr_buf[0] = addr;
@@ -78,8 +79,13 @@ static s32 ttsp_i2c_write_block_data(void *handle, u8 addr,
 	return (retval < 0) ? retval : 0;
 }
 
+static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
+	.write          = ttsp_i2c_write_block_data,
+	.read           = ttsp_i2c_read_block_data,
+};
+
 static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+				      const struct i2c_device_id *id)
 {
 	struct cyttsp_i2c *ts;
 
@@ -96,11 +102,9 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 	/* register driver_data */
 	ts->client = client;
 	i2c_set_clientdata(client, ts);
-	ts->ops.write = ttsp_i2c_write_block_data;
-	ts->ops.read = ttsp_i2c_read_block_data;
-	ts->ops.dev = &client->dev;
 
-	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev, client->irq);
+	ts->ttsp_client = cyttsp_core_init(&cyttsp_i2c_bus_ops, &client->dev,
+					   client->irq);
 	if (IS_ERR(ts->ttsp_client)) {
 		int retval = PTR_ERR(ts->ttsp_client);
 		kfree(ts);
@@ -114,11 +118,11 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 /* registered in driver struct */
 static int __devexit cyttsp_i2c_remove(struct i2c_client *client)
 {
-	struct cyttsp_i2c *ts;
+	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
 
-	ts = i2c_get_clientdata(client);
 	cyttsp_core_release(ts->ttsp_client);
 	kfree(ts);
+
 	return 0;
 }
 

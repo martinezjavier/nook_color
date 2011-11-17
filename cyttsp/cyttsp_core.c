@@ -145,7 +145,7 @@ struct cyttsp {
 	struct input_dev *input;
 	char phys[32];
 	const struct cyttsp_platform_data *platform_data;
-	struct cyttsp_bus_ops *bus_ops;
+	const struct cyttsp_bus_ops *bus_ops;
 	struct cyttsp_bootloader_data bl_data;
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
@@ -169,7 +169,7 @@ static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 		return -EINVAL;
 
 	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
-		retval = ts->bus_ops->read(ts->bus_ops, command, length, buf);
+		retval = ts->bus_ops->read(ts->dev, command, length, buf);
 		if (retval)
 			msleep(CY_DELAY_DFLT);
 	}
@@ -187,7 +187,7 @@ static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 		return -EINVAL;
 
 	for (tries = 0; tries < CY_NUM_RETRY && (retval < 0); tries++) {
-		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf);
+		retval = ts->bus_ops->write(ts->dev, command, length, buf);
 		if (retval)
 			msleep(CY_DELAY_DFLT);
 	}
@@ -672,7 +672,7 @@ static void cyttsp_close(struct input_dev *dev)
 	free_irq(ts->irq, ts);
 }
 
-void *cyttsp_core_init(struct cyttsp_bus_ops *bus_ops,
+void *cyttsp_core_init(const struct cyttsp_bus_ops *bus_ops,
 		       struct device *dev, int irq)
 {
 	struct input_dev *input_device;
