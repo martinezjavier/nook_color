@@ -48,7 +48,7 @@ static int cyttsp_i2c_read_block_data(struct device *dev,
 
 	retval = i2c_master_recv(client, values, length);
 
-	if (retval > 0 && != length)
+	if (retval > 0 && retval != length)
 		return -EIO;
 
 	return (retval < 0) ? retval : 0;
