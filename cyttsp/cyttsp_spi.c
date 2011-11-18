@@ -208,7 +208,7 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 
 static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 {
-	struct cyttsp *ts = dev_get_drvdata(&spi);
+	struct cyttsp *ts = dev_get_drvdata(&spi->dev);
 
 	cyttsp_remove(ts);
 
