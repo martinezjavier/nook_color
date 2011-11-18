@@ -72,86 +72,6 @@
 #define CY_MAX_FINGER               4
 #define CY_MAX_ID                   16
 
-struct cyttsp_tch {
-	__be16 x, y;
-	u8 z;
-} __packed;
-
-/* TrueTouch Standard Product Gen3 interface definition */
-struct cyttsp_xydata {
-	u8 hst_mode;
-	u8 tt_mode;
-	u8 tt_stat;
-	struct cyttsp_tch tch1;
-	u8 touch12_id;
-	struct cyttsp_tch tch2;
-	u8 gest_cnt;
-	u8 gest_id;
-	struct cyttsp_tch tch3;
-	u8 touch34_id;
-	struct cyttsp_tch tch4;
-	u8 tt_undef[3];
-	u8 act_dist;
-	u8 tt_reserved;
-} __packed;
-
-/* TTSP System Information interface definition */
-struct cyttsp_sysinfo_data {
-	u8 hst_mode;
-	u8 mfg_cmd;
-	u8 mfg_stat;
-	u8 cid[3];
-	u8 tt_undef1;
-	u8 uid[8];
-	u8 bl_verh;
-	u8 bl_verl;
-	u8 tts_verh;
-	u8 tts_verl;
-	u8 app_idh;
-	u8 app_idl;
-	u8 app_verh;
-	u8 app_verl;
-	u8 tt_undef[5];
-	u8 scn_typ;
-	u8 act_intrvl;
-	u8 tch_tmout;
-	u8 lp_intrvl;
-};
-
-/* TTSP Bootloader Register Map interface definition */
-#define CY_BL_CHKSUM_OK 0x01
-struct cyttsp_bootloader_data {
-	u8 bl_file;
-	u8 bl_status;
-	u8 bl_error;
-	u8 blver_hi;
-	u8 blver_lo;
-	u8 bld_blver_hi;
-	u8 bld_blver_lo;
-	u8 ttspver_hi;
-	u8 ttspver_lo;
-	u8 appid_hi;
-	u8 appid_lo;
-	u8 appver_hi;
-	u8 appver_lo;
-	u8 cid_0;
-	u8 cid_1;
-	u8 cid_2;
-};
-
-struct cyttsp {
-	struct device *dev;
-	int irq;
-	struct input_dev *input;
-	char phys[32];
-	const struct cyttsp_platform_data *platform_data;
-	const struct cyttsp_bus_ops *bus_ops;
-	struct cyttsp_bootloader_data bl_data;
-	struct cyttsp_sysinfo_data sysinfo_data;
-	struct completion bl_ready;
-	enum cyttsp_powerstate power_state;
-};
-
 static const u8 bl_command[] = {
 	0x00,			/* file offset */
 	0xFF,			/* command */
@@ -242,9 +162,9 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 	u8 bl_cmd[sizeof(bl_command)];
 
 	memcpy(bl_cmd, bl_command, sizeof(bl_command));
-	if (ts->platform_data->bl_keys)
+	if (ts->pdata->bl_keys)
 		memcpy(&bl_cmd[sizeof(bl_command) - CY_NUM_BL_KEYS],
-			ts->platform_data->bl_keys, sizeof(bl_command));
+			ts->pdata->bl_keys, sizeof(bl_command));
 
 	retval = ttsp_write_block_data(ts, CY_REG_BASE,
 		sizeof(bl_cmd), (void *)bl_cmd);
@@ -324,15 +244,15 @@ static int cyttsp_set_sysinfo_regs(struct cyttsp *ts)
 {
 	int retval = 0;
 
-	if (ts->platform_data->act_intrvl != CY_ACT_INTRVL_DFLT ||
-		ts->platform_data->tch_tmout != CY_TCH_TMOUT_DFLT ||
-		ts->platform_data->lp_intrvl != CY_LP_INTRVL_DFLT) {
+	if (ts->pdata->act_intrvl != CY_ACT_INTRVL_DFLT ||
+		ts->pdata->tch_tmout != CY_TCH_TMOUT_DFLT ||
+		ts->pdata->lp_intrvl != CY_LP_INTRVL_DFLT) {
 
 		u8 intrvl_ray[3];
 
-		intrvl_ray[0] = ts->platform_data->act_intrvl;
-		intrvl_ray[1] = ts->platform_data->tch_tmout;
-		intrvl_ray[2] = ts->platform_data->lp_intrvl;
+		intrvl_ray[0] = ts->pdata->act_intrvl;
+		intrvl_ray[1] = ts->pdata->tch_tmout;
+		intrvl_ray[2] = ts->pdata->lp_intrvl;
 
 		/* set intrvl registers */
 		retval = ttsp_write_block_data(ts,
@@ -366,7 +286,7 @@ static int cyttsp_act_dist_setup(struct cyttsp *ts)
 	u8 act_dist_setup;
 
 	/* Init gesture; active distance setup */
-	act_dist_setup = ts->platform_data->act_dist;
+	act_dist_setup = ts->pdata->act_dist;
 	retval = ttsp_write_block_data(ts, CY_REG_ACT_DIST,
 		sizeof(act_dist_setup), &act_dist_setup);
 
@@ -439,7 +359,7 @@ static int cyttsp_handle_tchdata(struct cyttsp *ts)
 		return 0;
 
 	/* provide flow control handshake */
-	if (ts->platform_data->use_hndshk)
+	if (ts->pdata->use_hndshk)
 		if (cyttsp_hndshk(ts, xy_data.hst_mode))
 			return 0;
 
@@ -537,17 +457,8 @@ static int cyttsp_power_on(struct cyttsp *ts)
 {
 	int retval = 0;
 
-	if (!ts)
-		return -ENOMEM;
-
 	ts->power_state = CY_BL_STATE;
-
-	/* enable interrupts */
-	retval = request_threaded_irq(ts->irq, NULL, cyttsp_irq,
-		IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-		ts->platform_data->name, ts);
-	if (retval < 0)
-		goto bypass;
+	enable_irq(ts->irq);
 
 	retval = cyttsp_soft_reset(ts);
 	if (retval == 0)
@@ -593,20 +504,19 @@ bypass:
 }
 
 #ifdef CONFIG_PM_SLEEP
-int cyttsp_resume(void *handle)
+int cyttsp_resume(struct cyttsp *ts)
 {
-	struct cyttsp *ts = handle;
 	int retval = 0;
 	struct cyttsp_xydata xydata;
 
 	if (!ts)
 		return retval;
 
-	if (ts->platform_data->use_sleep && (ts->power_state !=
+	if (ts->pdata->use_sleep && (ts->power_state !=
 					     CY_ACTIVE_STATE)) {
 
-		if (ts->platform_data->wakeup)
-			retval = ts->platform_data->wakeup();
+		if (ts->pdata->wakeup)
+			retval = ts->pdata->wakeup();
 		else
 			retval = -ENOSYS;
 
@@ -624,15 +534,14 @@ int cyttsp_resume(void *handle)
 }
 EXPORT_SYMBOL_GPL(cyttsp_resume);
 
-int cyttsp_suspend(void *handle)
+int cyttsp_suspend(struct cyttsp *ts)
 {
-	struct cyttsp *ts = handle;
 	u8 sleep_mode = 0;
 	int retval = 0;
 
-	if (ts->platform_data->use_sleep &&
+	if (ts->pdata->use_sleep &&
 		(ts->power_state == CY_ACTIVE_STATE)) {
-		sleep_mode = ts->platform_data->use_sleep;
+		sleep_mode = ts->pdata->use_sleep;
 		retval = ttsp_write_block_data(ts,
 			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
 		if (retval >= 0)
@@ -651,115 +560,112 @@ static int cyttsp_open(struct input_dev *dev)
 	return cyttsp_power_on(ts);
 }
 
-void cyttsp_core_release(void *handle)
-{
-	struct cyttsp *ts = handle;
-
-	if (ts) {
-		free_irq(ts->irq, ts);
-		input_unregister_device(ts->input);
-		if (ts->platform_data->exit)
-			ts->platform_data->exit();
-		kfree(ts);
-	}
-}
-EXPORT_SYMBOL_GPL(cyttsp_core_release);
-
 static void cyttsp_close(struct input_dev *dev)
 {
 	struct cyttsp *ts = input_get_drvdata(dev);
 
-	free_irq(ts->irq, ts);
+	disable_irq(ts->irq);
 }
 
-void *cyttsp_core_init(const struct cyttsp_bus_ops *bus_ops,
-		       struct device *dev, int irq)
+struct cyttsp *cyttsp_probe(const struct cyttsp_bus_ops *bus_ops,
+			    struct device *dev, int irq, size_t xfer_buf_size)
 {
-	struct input_dev *input_device;
-	int ret;
+	const struct cyttsp_platform_data *pdata = dev->platform_data;
+	struct cyttsp *ts;
+	struct input_dev *input_dev;
+	int error;
 
-	struct cyttsp *ts = kzalloc(sizeof(*ts), GFP_KERNEL);
-
-	if (!ts) {
-		pr_err("%s: Error, kzalloc\n", __func__);
-		goto error_alloc_data;
+	if (!dev || !bus_ops || !pdata || !pdata->name || irq <= 0) {
+		error = -EINVAL;
+		goto err_out;
 	}
 
-	if (dev == NULL || bus_ops == NULL) {
-		kfree(ts);
-		goto error_alloc_data;
+	ts = kzalloc(sizeof(*ts) + xfer_buf_size, GFP_KERNEL);
+	input_dev = input_allocate_device();
+	if (!ts || !input_dev) {
+		error = -ENOMEM;
+		goto err_free_mem;
 	}
 
 	ts->dev = dev;
-	ts->platform_data = dev->platform_data;
+	ts->input = input_dev;
+	ts->pdata = dev->platform_data;
 	ts->bus_ops = bus_ops;
-	init_completion(&ts->bl_ready);
+	ts->irq = irq;
 
-	if (ts->platform_data->init) {
-		if (ts->platform_data->init()) {
-			dev_dbg(ts->dev, "%s: Error, platform init failed!\n",
-				__func__);
-			goto error_init;
+	init_completion(&ts->bl_ready);
+	snprintf(ts->phys, sizeof(ts->phys), "%s/input0", dev_name(dev));
+
+	if (pdata->init) {
+		error = pdata->init();
+		if (error) {
+			dev_err(ts->dev, "platform init failed, err: %d\n",
+				error);
+			goto err_free_mem;
 		}
 	}
 
-	ts->irq = irq;
-	if (ts->irq <= 0) {
-		dev_dbg(ts->dev, "%s: Error, failed to allocate irq\n",
-			__func__);
-			goto error_init;
-	}
+	input_dev->name = pdata->name;
+	input_dev->phys = ts->phys;
+	input_dev->id.bustype = bus_ops->bustype;
+	input_dev->dev.parent = ts->dev;
 
-	/* Create the input device and register it. */
-	input_device = input_allocate_device();
-	if (!input_device) {
-		dev_dbg(ts->dev, "%s: Error, failed to allocate input device\n",
-			__func__);
-		goto error_input_allocate_device;
-	}
+	input_dev->open = cyttsp_open;
+	input_dev->close = cyttsp_close;
 
-	ts->input = input_device;
-	snprintf(ts->phys, sizeof(ts->phys), "%s/input0", dev_name(dev));
+	input_set_drvdata(input_dev, ts);
 
-	input_device->name = ts->platform_data->name;
-	input_device->phys = ts->phys;
-	input_device->id.bustype = bus_ops->bustype;
-	input_device->dev.parent = ts->dev;
-	input_device->open = cyttsp_open;
-	input_device->close = cyttsp_close;
-	input_set_drvdata(input_device, ts);
-
-	__set_bit(EV_ABS, input_device->evbit);
-	input_set_abs_params(input_device, ABS_MT_POSITION_X,
-			     0, ts->platform_data->maxx, 0, 0);
-	input_set_abs_params(input_device, ABS_MT_POSITION_Y,
-			     0, ts->platform_data->maxy, 0, 0);
-	input_set_abs_params(input_device, ABS_MT_TOUCH_MAJOR,
+	__set_bit(EV_ABS, input_dev->evbit);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
+			     0, pdata->maxx, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+			     0, pdata->maxy, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
 			     0, CY_MAXZ, 0, 0);
 
-	input_mt_init_slots(input_device, CY_MAX_ID);
+	input_mt_init_slots(input_dev, CY_MAX_ID);
 
-	ret = input_register_device(input_device);
-	if (ret) {
-		dev_err(ts->dev, "%s: Error, failed to register input device: %d\n",
-			__func__, ret);
-		goto error_input_register_device;
+	error = request_threaded_irq(ts->irq, NULL, cyttsp_irq,
+				     IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				     pdata->name, ts);
+	if (error) {
+		dev_err(ts->dev, "failed to request IRQ %d, err: %d\n",
+			ts->irq, error);
+		goto err_platform_exit;
+	}
+	disable_irq(ts->irq);
+
+	error = input_register_device(input_dev);
+	if (error) {
+		dev_err(ts->dev, "failed to register input device: %d\n",
+			error);
+		goto err_free_irq;
 	}
 
-	goto no_error;
-
-error_input_register_device:
-	input_free_device(input_device);
-error_input_allocate_device:
-	if (ts->platform_data->exit)
-		ts->platform_data->exit();
-error_init:
-	kfree(ts);
-error_alloc_data:
-no_error:
 	return ts;
+
+err_free_irq:
+	free_irq(ts->irq, ts);
+err_platform_exit:
+	if (pdata->exit)
+		pdata->exit();
+err_free_mem:
+	input_free_device(input_dev);
+	kfree(ts);
+err_out:
+	return ERR_PTR(error);
 }
-EXPORT_SYMBOL_GPL(cyttsp_core_init);
+EXPORT_SYMBOL_GPL(cyttsp_probe);
+
+void cyttsp_remove(struct cyttsp *ts)
+{
+	free_irq(ts->irq, ts);
+	input_unregister_device(ts->input);
+	if (ts->pdata->exit)
+		ts->pdata->exit();
+	kfree(ts);
+}
+EXPORT_SYMBOL_GPL(cyttsp_remove);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard touchscreen driver core");

@@ -33,28 +33,20 @@
 
 #include <linux/i2c.h>
 #include <linux/input.h>
-#include <linux/slab.h>
 
 #define CY_I2C_DATA_SIZE  128
 
-struct cyttsp_i2c {
-	struct i2c_client *client;
-	void *ttsp_client;
-	u8 wr_buf[CY_I2C_DATA_SIZE];
-};
-
-static int ttsp_i2c_read_block_data(struct device *dev,
-				    u8 addr, u8 length, void *values)
+static int cyttsp_i2c_read_block_data(struct device *dev,
+				      u8 addr, u8 length, void *values)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
-	int retval = 0;
+	int retval;
 
-	retval = i2c_master_send(ts->client, &addr, 1);
+	retval = i2c_master_send(client, &addr, 1);
 	if (retval < 0)
 		return retval;
 
-	retval = i2c_master_recv(ts->client, values, length);
+	retval = i2c_master_recv(client, values, length);
 
 	if (retval > 0 && != length)
 		return -EIO;
@@ -62,68 +54,53 @@ static int ttsp_i2c_read_block_data(struct device *dev,
 	return (retval < 0) ? retval : 0;
 }
 
-static int ttsp_i2c_write_block_data(struct device *dev,
-				     u8 addr, u8 length, const void *values)
+static int cyttsp_i2c_write_block_data(struct device *dev,
+				       u8 addr, u8 length, const void *values)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
+	struct cyttsp *ts = i2c_get_clientdata(client);
 	int retval;
 
-	ts->wr_buf[0] = addr;
-	memcpy(&ts->wr_buf[1], values, length);
 
-	retval = i2c_master_send(ts->client, ts->wr_buf, length+1);
+	ts->xfer_buf[0] = addr;
+	memcpy(&ts->xfer_buf[1], values, length);
+	retval = i2c_master_send(client, ts->xfer_buf, length + 1);
 
 	if (retval != length)
 		return -EIO;
 
-	return (retval < 0) ? retval : 0;
+	return 0;
 }
 
 static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
 	.bustype        = BUS_I2C,
-	.write          = ttsp_i2c_write_block_data,
-	.read           = ttsp_i2c_read_block_data,
+	.write          = cyttsp_i2c_write_block_data,
+	.read           = cyttsp_i2c_read_block_data,
 };
 
 static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 				      const struct i2c_device_id *id)
 {
-	struct cyttsp_i2c *ts;
+	struct cyttsp *ts;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
 		return -EIO;
 
-	/* allocate and clear memory */
-	ts = kzalloc(sizeof(*ts), GFP_KERNEL);
-	if (!ts) {
-		dev_dbg(&client->dev, "%s: Error, kzalloc.\n", __func__);
-		return -ENOMEM;
-	}
+	ts = cyttsp_probe(&cyttsp_i2c_bus_ops, &client->dev, client->irq,
+			  CY_I2C_DATA_SIZE);
+	if (IS_ERR(ts))
+		return PTR_ERR(ts);
 
-	/* register driver_data */
-	ts->client = client;
 	i2c_set_clientdata(client, ts);
-
-	ts->ttsp_client = cyttsp_core_init(&cyttsp_i2c_bus_ops, &client->dev,
-					   client->irq);
-	if (IS_ERR(ts->ttsp_client)) {
-		int retval = PTR_ERR(ts->ttsp_client);
-		kfree(ts);
-		return retval;
-	}
 
 	return 0;
 }
 
-
-/* registered in driver struct */
 static int __devexit cyttsp_i2c_remove(struct i2c_client *client)
 {
-	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
+	struct cyttsp *ts = i2c_get_clientdata(client);
 
-	cyttsp_core_release(ts->ttsp_client);
-	kfree(ts);
+	cyttsp_remove(ts);
 
 	return 0;
 }
@@ -132,52 +109,50 @@ static int __devexit cyttsp_i2c_remove(struct i2c_client *client)
 static int cyttsp_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
+	struct cyttsp *ts = i2c_get_clientdata(client);
 
-	return cyttsp_suspend(ts->ttsp_client);
+	return cyttsp_suspend(ts);
 }
 
 static int cyttsp_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
+	struct cyttsp *ts = i2c_get_clientdata(client);
 
-	return cyttsp_resume(ts->ttsp_client);
+	return cyttsp_resume(ts);
 }
 #endif
 
 static SIMPLE_DEV_PM_OPS(cyttsp_i2c_pm, cyttsp_i2c_suspend, cyttsp_i2c_resume);
 
 static const struct i2c_device_id cyttsp_i2c_id[] = {
-	{ CY_I2C_NAME, 0 },  { }
+	{ CY_I2C_NAME, 0 },
+	{ }
 };
+MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 
 static struct i2c_driver cyttsp_i2c_driver = {
 	.driver = {
-		.name = CY_I2C_NAME,
-		.owner = THIS_MODULE,
-		.pm = &cyttsp_i2c_pm,
+		.name   = CY_I2C_NAME,
+		.owner  = THIS_MODULE,
+		.pm     = &cyttsp_i2c_pm,
 	},
-	.probe = cyttsp_i2c_probe,
-	.remove = __devexit_p(cyttsp_i2c_remove),
-	.id_table = cyttsp_i2c_id,
+	.probe          = cyttsp_i2c_probe,
+	.remove         = __devexit_p(cyttsp_i2c_remove),
+	.id_table       = cyttsp_i2c_id,
 };
 
 static int __init cyttsp_i2c_init(void)
 {
 	return i2c_add_driver(&cyttsp_i2c_driver);
 }
+module_init(cyttsp_i2c_init);
 
 static void __exit cyttsp_i2c_exit(void)
 {
 	return i2c_del_driver(&cyttsp_i2c_driver);
 }
 
-module_init(cyttsp_i2c_init);
-module_exit(cyttsp_i2c_exit);
-
-MODULE_ALIAS("i2c:cyttsp");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 MODULE_AUTHOR("Cypress");
-MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
