@@ -537,7 +537,7 @@ static int cyttsp_suspend(struct device *dev)
 	int retval = 0;
 
 	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
-		sleep_mode = ts->platform_data->use_sleep;
+		sleep_mode = ts->pdata->use_sleep;
 		retval = ttsp_write_block_data(ts,
 			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
 		if (retval >= 0)
