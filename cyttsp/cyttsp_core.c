@@ -504,16 +504,13 @@ bypass:
 }
 
 #ifdef CONFIG_PM_SLEEP
-int cyttsp_resume(struct cyttsp *ts)
+static int cyttsp_resume(struct device *dev)
 {
+	struct cyttsp *ts = dev_get_drvdata(dev);
 	int retval = 0;
 	struct cyttsp_xydata xydata;
 
-	if (!ts)
-		return retval;
-
-	if (ts->pdata->use_sleep && (ts->power_state !=
-					     CY_ACTIVE_STATE)) {
+	if (ts->pdata->use_sleep && ts->power_state != CY_ACTIVE_STATE) {
 
 		if (ts->pdata->wakeup)
 			retval = ts->pdata->wakeup();
@@ -532,16 +529,15 @@ int cyttsp_resume(struct cyttsp *ts)
 
 	return retval;
 }
-EXPORT_SYMBOL_GPL(cyttsp_resume);
 
-int cyttsp_suspend(struct cyttsp *ts)
+static int cyttsp_suspend(struct device *dev)
 {
+	struct cyttsp *ts = dev_get_drvdata(dev);
 	u8 sleep_mode = 0;
 	int retval = 0;
 
-	if (ts->pdata->use_sleep &&
-		(ts->power_state == CY_ACTIVE_STATE)) {
-		sleep_mode = ts->pdata->use_sleep;
+	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
+		sleep_mode = ts->platform_data->use_sleep;
 		retval = ttsp_write_block_data(ts,
 			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
 		if (retval >= 0)
@@ -550,8 +546,10 @@ int cyttsp_suspend(struct cyttsp *ts)
 
 	return retval;
 }
-EXPORT_SYMBOL_GPL(cyttsp_suspend);
 #endif
+
+SIMPLE_DEV_PM_OPS(cyttsp_pm_ops, cyttsp_suspend, cyttsp_resume);
+EXPORT_SYMBOL_GPL(cyttsp_pm_ops);
 
 static int cyttsp_open(struct input_dev *dev)
 {

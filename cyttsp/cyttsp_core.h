@@ -134,9 +134,7 @@ struct cyttsp {
 struct cyttsp *cyttsp_probe(const struct cyttsp_bus_ops *bus_ops,
 			    struct device *dev, int irq, size_t xfer_buf_size);
 void cyttsp_remove(struct cyttsp *ts);
-#ifdef CONFIG_PM_SLEEP
-int cyttsp_resume(struct cyttsp *ts);
-int cyttsp_suspend(struct cyttsp *ts);
-#endif
+
+extern const struct dev_pm_ops cyttsp_pm_ops;
 
 #endif /* __CYTTSP_CORE_H__ */
