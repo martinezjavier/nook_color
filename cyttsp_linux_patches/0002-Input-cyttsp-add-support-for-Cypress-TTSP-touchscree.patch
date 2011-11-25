@@ -1,7 +1,7 @@
-From 3760cc327659ee0dfcfe537219a074a83730a1f2 Mon Sep 17 00:00:00 2001
+From afdbad3f8c34d73d8eed452aa97fbae2779e3ada Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sat, 23 Oct 2011 20:16:58 +0200
-Subject: [PATCH v7 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+Date: Sun, 20 Nov 2011 06:12:32 +0100
+Subject: [PATCH 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -10,29 +10,16 @@ This patch add supports for the Cypress TTSP I2C bus interface.
 
 Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
 ---
+ drivers/input/touchscreen/cyttsp_i2c.c |  138 ++++++++++++++++++++++++++++++++
+ 1 files changed, 138 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/input/touchscreen/cyttsp_i2c.c
 
-v2: Fix issues called out by Dmitry Torokhov
-    - Extract the IRQ from the i2c client data and pass to cyttsp_core_init().
-
-v3: Fix issues called out by Henrik Rydberg and Mohan Pallaka
-    - Remove bus type info since it is not used.
-
-v7: Fix issues called out by Shubhrajyoti Datta
-    - Check number of bytes in ttsp_i2c_[read | write]_block_data() functions.
-    - Remove unused ttsp_i2c_tch_ext() function to handle extended touch data.
-    - Remove unnecesary debug information.
-    - Move cyttsp_i2c_[suspend | resume]() functions to dev pm ops.
-
- drivers/input/touchscreen/cyttsp/cyttsp_i2c.c |  178 +++++++++++++++++++++++++
- 1 files changed, 178 insertions(+), 0 deletions(-)
- create mode 100644 drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
-
-diff --git a/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
+diff --git a/drivers/input/touchscreen/cyttsp_i2c.c b/drivers/input/touchscreen/cyttsp_i2c.c
 new file mode 100644
-index 0000000..d7d62d4
+index 0000000..a418928
 --- /dev/null
-+++ b/drivers/input/touchscreen/cyttsp/cyttsp_i2c.c
-@@ -0,0 +1,178 @@
++++ b/drivers/input/touchscreen/cyttsp_i2c.c
+@@ -0,0 +1,138 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) I2C touchscreen driver.
@@ -67,150 +54,110 @@ index 0000000..d7d62d4
 +#include "cyttsp_core.h"
 +
 +#include <linux/i2c.h>
-+#include <linux/slab.h>
++#include <linux/input.h>
 +
 +#define CY_I2C_DATA_SIZE  128
 +
-+struct cyttsp_i2c {
-+	struct cyttsp_bus_ops ops;
-+	struct i2c_client *client;
-+	void *ttsp_client;
-+	u8 wr_buf[CY_I2C_DATA_SIZE];
-+};
-+
-+static s32 ttsp_i2c_read_block_data(void *handle, u8 addr,
-+	u8 length, void *values)
++static int cyttsp_i2c_read_block_data(struct device *dev,
++				      u8 addr, u8 length, void *values)
 +{
-+	struct cyttsp_i2c *ts = container_of(handle, struct cyttsp_i2c, ops);
-+	int retval = 0;
++	struct i2c_client *client = to_i2c_client(dev);
++	int retval;
 +
-+	retval = i2c_master_send(ts->client, &addr, 1);
++	retval = i2c_master_send(client, &addr, 1);
 +	if (retval < 0)
 +		return retval;
 +
-+	retval = i2c_master_recv(ts->client, values, length);
++	retval = i2c_master_recv(client, values, length);
 +
-+	if (retval != length)
++	if (retval > 0 && retval != length)
 +		return -EIO;
 +
 +	return (retval < 0) ? retval : 0;
 +}
 +
-+static s32 ttsp_i2c_write_block_data(void *handle, u8 addr,
-+	u8 length, const void *values)
++static int cyttsp_i2c_write_block_data(struct device *dev,
++				       u8 addr, u8 length, const void *values)
 +{
-+	struct cyttsp_i2c *ts = container_of(handle, struct cyttsp_i2c, ops);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct cyttsp *ts = i2c_get_clientdata(client);
 +	int retval;
 +
-+	ts->wr_buf[0] = addr;
-+	memcpy(&ts->wr_buf[1], values, length);
 +
-+	retval = i2c_master_send(ts->client, ts->wr_buf, length+1);
++	ts->xfer_buf[0] = addr;
++	memcpy(&ts->xfer_buf[1], values, length);
++	retval = i2c_master_send(client, ts->xfer_buf, length + 1);
 +
 +	if (retval != length)
 +		return -EIO;
 +
-+	return (retval < 0) ? retval : 0;
++	return 0;
 +}
 +
++static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
++	.bustype        = BUS_I2C,
++	.write          = cyttsp_i2c_write_block_data,
++	.read           = cyttsp_i2c_read_block_data,
++};
++
 +static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
-+	const struct i2c_device_id *id)
++				      const struct i2c_device_id *id)
 +{
-+	struct cyttsp_i2c *ts;
++	struct cyttsp *ts;
 +
 +	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
 +		return -EIO;
 +
-+	/* allocate and clear memory */
-+	ts = kzalloc(sizeof(*ts), GFP_KERNEL);
-+	if (!ts) {
-+		dev_dbg(&client->dev, "%s: Error, kzalloc.\n", __func__);
-+		return -ENOMEM;
-+	}
++	ts = cyttsp_probe(&cyttsp_i2c_bus_ops, &client->dev, client->irq,
++			  CY_I2C_DATA_SIZE);
++	if (IS_ERR(ts))
++		return PTR_ERR(ts);
 +
-+	/* register driver_data */
-+	ts->client = client;
 +	i2c_set_clientdata(client, ts);
-+	ts->ops.write = ttsp_i2c_write_block_data;
-+	ts->ops.read = ttsp_i2c_read_block_data;
-+	ts->ops.dev = &client->dev;
-+
-+	ts->ttsp_client = cyttsp_core_init(&ts->ops, &client->dev, client->irq);
-+	if (IS_ERR(ts->ttsp_client)) {
-+		int retval = PTR_ERR(ts->ttsp_client);
-+		kfree(ts);
-+		return retval;
-+	}
 +
 +	return 0;
 +}
 +
-+
-+/* registered in driver struct */
 +static int __devexit cyttsp_i2c_remove(struct i2c_client *client)
 +{
-+	struct cyttsp_i2c *ts;
++	struct cyttsp *ts = i2c_get_clientdata(client);
 +
-+	ts = i2c_get_clientdata(client);
-+	cyttsp_core_release(ts->ttsp_client);
-+	kfree(ts);
++	cyttsp_remove(ts);
++
 +	return 0;
 +}
 +
-+#ifdef CONFIG_PM
-+static int cyttsp_i2c_suspend(struct device *dev)
-+{
-+	struct i2c_client *client = to_i2c_client(dev);
-+	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
-+
-+	return cyttsp_suspend(ts->ttsp_client);
-+}
-+
-+static int cyttsp_i2c_resume(struct device *dev)
-+{
-+	struct i2c_client *client = to_i2c_client(dev);
-+	struct cyttsp_i2c *ts = i2c_get_clientdata(client);
-+
-+	return cyttsp_resume(ts->ttsp_client);
-+}
-+static SIMPLE_DEV_PM_OPS(cyttsp_i2c_pm, cyttsp_i2c_suspend, cyttsp_i2c_resume);
-+#endif
-+
 +static const struct i2c_device_id cyttsp_i2c_id[] = {
-+	{ CY_I2C_NAME, 0 },  { }
++	{ CY_I2C_NAME, 0 },
++	{ }
 +};
++MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 +
 +static struct i2c_driver cyttsp_i2c_driver = {
 +	.driver = {
-+		.name = CY_I2C_NAME,
-+		.owner = THIS_MODULE,
-+#ifdef CONFIG_PM
-+		.pm = &cyttsp_i2c_pm,
-+#endif
++		.name   = CY_I2C_NAME,
++		.owner  = THIS_MODULE,
++		.pm     = &cyttsp_pm_ops,
 +	},
-+	.probe = cyttsp_i2c_probe,
-+	.remove = __devexit_p(cyttsp_i2c_remove),
-+	.id_table = cyttsp_i2c_id,
++	.probe          = cyttsp_i2c_probe,
++	.remove         = __devexit_p(cyttsp_i2c_remove),
++	.id_table       = cyttsp_i2c_id,
 +};
 +
 +static int __init cyttsp_i2c_init(void)
 +{
 +	return i2c_add_driver(&cyttsp_i2c_driver);
 +}
++module_init(cyttsp_i2c_init);
 +
 +static void __exit cyttsp_i2c_exit(void)
 +{
 +	return i2c_del_driver(&cyttsp_i2c_driver);
 +}
 +
-+module_init(cyttsp_i2c_init);
-+module_exit(cyttsp_i2c_exit);
-+
-+MODULE_ALIAS("i2c:cyttsp");
 +MODULE_LICENSE("GPL");
 +MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 +MODULE_AUTHOR("Cypress");
-+MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 -- 
 1.7.4.1
 
