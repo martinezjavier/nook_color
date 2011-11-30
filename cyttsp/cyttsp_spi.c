@@ -96,7 +96,9 @@ static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
 		break;
 
 	default:
-		BUG();
+		dev_dbg(&spi->dev,
+			"%s: bad operation code=%d\n", __func__, op);
+		return -EINVAL;
 	}
 
 	retval = spi_sync(spi, &msg);
@@ -112,7 +114,7 @@ static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
 		 */
 	}
 
-	if (rd_buf[CY_SPI_SYNC_BYTE] != CY_SPI_SYNC_ACK1 &&
+	if (rd_buf[CY_SPI_SYNC_BYTE] != CY_SPI_SYNC_ACK1 ||
 	    rd_buf[CY_SPI_SYNC_BYTE + 1] != CY_SPI_SYNC_ACK2) {
 		int i;
 		for (i = 0; i < CY_SPI_CMD_BYTES; i++)
