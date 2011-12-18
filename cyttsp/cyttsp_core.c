@@ -461,7 +461,7 @@ static int cyttsp_power_on(struct cyttsp *ts)
 	enable_irq(ts->irq);
 
 	retval = cyttsp_soft_reset(ts);
-	if (retval == 0)
+	if (retval < 0)
 		goto bypass;
 
 	retval = cyttsp_bl_app_valid(ts);
