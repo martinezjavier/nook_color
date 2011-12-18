@@ -48,10 +48,10 @@ static int cyttsp_i2c_read_block_data(struct device *dev,
 
 	retval = i2c_master_recv(client, values, length);
 
-	if (retval > 0 && retval != length)
-		return -EIO;
+	if (retval < 0)
+		return retval;
 
-	return (retval < 0) ? retval : 0;
+	return (retval != length) ? -EIO : 0;
 }
 
 static int cyttsp_i2c_write_block_data(struct device *dev,
@@ -61,15 +61,11 @@ static int cyttsp_i2c_write_block_data(struct device *dev,
 	struct cyttsp *ts = i2c_get_clientdata(client);
 	int retval;
 
-
 	ts->xfer_buf[0] = addr;
 	memcpy(&ts->xfer_buf[1], values, length);
 	retval = i2c_master_send(client, ts->xfer_buf, length + 1);
 
-	if (retval != length)
-		return -EIO;
-
-	return 0;
+	return (retval < 0) ? retval : 0;
 }
 
 static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
@@ -88,6 +84,7 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 
 	ts = cyttsp_probe(&cyttsp_i2c_bus_ops, &client->dev, client->irq,
 			  CY_I2C_DATA_SIZE);
+
 	if (IS_ERR(ts))
 		return PTR_ERR(ts);
 
