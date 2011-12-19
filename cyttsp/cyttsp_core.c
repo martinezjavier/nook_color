@@ -57,7 +57,7 @@
 #define CY_REG_LP_INTRVL            (CY_REG_TCH_TMOUT+1)
 #define CY_MAXZ                     255
 #define CY_DELAY_DFLT               20 /* ms */
-#define CY_DELAY_MAX                (500/CY_DELAY_DFLT) /* half second */
+#define CY_DELAY_MAX                500
 #define CY_ACT_DIST_DFLT            0xF8
 #define CY_HNDSHK_BIT               0x80
 /* device mode bits */
@@ -178,9 +178,9 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 		msleep(CY_DELAY_DFLT);
 		retval = cyttsp_load_bl_regs(ts);
 	} while ((retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status)) &&
-		(tries++ < CY_DELAY_MAX));
+		(tries++ < CY_NUM_RETRY));
 
-	if (tries >= CY_DELAY_MAX)
+	if (tries >= CY_NUM_RETRY)
 		return -ENODEV;
 
 	return retval;
@@ -202,10 +202,10 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 	do {
 		retval = ttsp_read_block_data(ts, CY_REG_BASE,
 			sizeof(xy_data), &(xy_data));
-	} while ((retval || xy_data.act_dist != CY_ACT_DIST_DFLT) &&
-		 (tries++ < CY_DELAY_MAX));
+	} while ((retval || xy_data.act_dist == CY_ACT_DIST_DFLT) &&
+		 (tries++ < CY_NUM_RETRY));
 
-	if (tries >= CY_DELAY_MAX)
+	if (tries >= CY_NUM_RETRY)
 		return -EAGAIN;
 
 	return retval;
@@ -232,9 +232,9 @@ static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 			sizeof(ts->sysinfo_data), &ts->sysinfo_data);
 	} while ((retval || (!ts->sysinfo_data.tts_verh &&
 			     !ts->sysinfo_data.tts_verl)) &&
-		 (tries++ < CY_DELAY_MAX));
+		 (tries++ < CY_NUM_RETRY));
 
-	if (tries >= CY_DELAY_MAX)
+	if (tries >= CY_NUM_RETRY)
 		return -EAGAIN;
 
 	return retval;
