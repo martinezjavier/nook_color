@@ -79,8 +79,10 @@ static int __devinit cyttsp_i2c_probe(struct i2c_client *client,
 {
 	struct cyttsp *ts;
 
-	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
+	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
+		dev_err(&client->dev, "I2C functionality not Supported\n");
 		return -EIO;
+	}
 
 	ts = cyttsp_probe(&cyttsp_i2c_bus_ops, &client->dev, client->irq,
 			  CY_I2C_DATA_SIZE);
@@ -134,3 +136,4 @@ module_exit(cyttsp_i2c_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 MODULE_AUTHOR("Cypress");
+MODULE_ALIAS("i2c:cyttsp");
