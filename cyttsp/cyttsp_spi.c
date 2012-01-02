@@ -7,9 +7,10 @@
  * CY8CTMA340
  *
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
- * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
+ * Copyright (C) 2011 Javier Martinez Canillas.
  *
- * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
+ * Multi-touch protocol type B support and cleanups for submission by
+ * Javier Martinez Canillas <martinez.javier@gmail.com>.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -193,7 +194,7 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 	spi->mode = SPI_MODE_0;
 	error = spi_setup(spi);
 	if (error < 0) {
-		dev_dbg(&spi->dev, "%s: SPI setup error %d\n",
+		dev_err(&spi->dev, "%s: SPI setup error %d\n",
 			__func__, error);
 		return error;
 	}
@@ -243,4 +244,5 @@ MODULE_ALIAS("spi:cyttsp");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) SPI driver");
 MODULE_AUTHOR("Cypress");
+MODULE_ALIAS("spi:cyttsp");
 
