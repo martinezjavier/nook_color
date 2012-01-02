@@ -128,6 +128,7 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
+	bool			suspended;
 
 	u8 xfer_buf[] ____cacheline_aligned;
 };
