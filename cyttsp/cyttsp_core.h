@@ -7,9 +7,7 @@
  * CY8CTMA340
  *
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
- * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
- *
- * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
+ * Copyright (C) 2012 Javier Martinez Canillas <javier@dowhile0.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -128,7 +126,8 @@ struct cyttsp {
 	struct cyttsp_sysinfo_data sysinfo_data;
 	struct completion bl_ready;
 	enum cyttsp_powerstate power_state;
-	bool			suspended;
+	bool suspended;
+	bool on;
 
 	u8 xfer_buf[] ____cacheline_aligned;
 };
