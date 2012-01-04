@@ -7,9 +7,7 @@
  * CY8CTMA340
  *
  * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
- * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
- *
- * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
+ * Copyright (C) 2012 Javier Martinez Canillas <javier@dowhile0.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -503,12 +501,10 @@ bypass:
 	return retval;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int cyttsp_resume(struct device *dev)
+static int __cyttsp_enable(struct cyttsp *ts)
 {
-	struct cyttsp *ts = dev_get_drvdata(dev);
-	int retval = 0;
 	struct cyttsp_xydata xydata;
+	int retval = 0;
 
 	if (ts->pdata->use_sleep && ts->power_state != CY_ACTIVE_STATE) {
 
@@ -522,10 +518,48 @@ static int cyttsp_resume(struct device *dev)
 						      sizeof(xydata),
 						      &xydata);
 			if (retval >= 0 &&
-			    !GET_HSTMODE(xydata.hst_mode))
+			    !GET_HSTMODE(xydata.hst_mode)) {
 				ts->power_state = CY_ACTIVE_STATE;
+				enable_irq(ts->irq);
+			}
 		}
 	}
+
+	return retval;
+}
+
+static int __cyttsp_disable(struct cyttsp *ts)
+{
+	u8 sleep_mode = 0;
+	int retval = 0;
+
+	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
+		sleep_mode = ts->pdata->use_sleep;
+		retval = ttsp_write_block_data(ts,
+					       CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
+		if (retval >= 0) {
+			ts->power_state = CY_SLEEP_STATE;
+			disable_irq(ts->irq);
+		}
+	}
+
+	return retval;
+}
+
+#ifdef CONFIG_PM_SLEEP
+static int cyttsp_resume(struct device *dev)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	int retval = 0;
+
+	mutex_lock(&ts->input->mutex);
+
+	if (ts->suspended)
+		retval = __cyttsp_enable(ts);
+
+	ts->suspended = false;
+
+	mutex_unlock(&ts->input->mutex);
 
 	return retval;
 }
@@ -533,16 +567,16 @@ static int cyttsp_resume(struct device *dev)
 static int cyttsp_suspend(struct device *dev)
 {
 	struct cyttsp *ts = dev_get_drvdata(dev);
-	u8 sleep_mode = 0;
 	int retval = 0;
 
-	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
-		sleep_mode = ts->pdata->use_sleep;
-		retval = ttsp_write_block_data(ts,
-			CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
-		if (retval >= 0)
-			ts->power_state = CY_SLEEP_STATE;
-	}
+	mutex_lock(&ts->input->mutex);
+
+	if (!ts->suspended)
+		retval = __cyttsp_disable(ts);
+
+	ts->suspended = true;
+
+	mutex_unlock(&ts->input->mutex);
 
 	return retval;
 }
@@ -554,15 +588,29 @@ EXPORT_SYMBOL_GPL(cyttsp_pm_ops);
 static int cyttsp_open(struct input_dev *dev)
 {
 	struct cyttsp *ts = input_get_drvdata(dev);
+	int retval = 0;
 
-	return cyttsp_power_on(ts);
+	if (!ts->on) {
+		retval = cyttsp_power_on(ts);
+
+		if (retval)
+			return retval;
+		else
+			ts->on = true;
+	}
+
+	if (!ts->suspended)
+		retval = __cyttsp_enable(ts);
+
+	return retval;
 }
 
 static void cyttsp_close(struct input_dev *dev)
 {
 	struct cyttsp *ts = input_get_drvdata(dev);
 
-	disable_irq(ts->irq);
+	if (!ts->suspended)
+		__cyttsp_disable(ts);
 }
 
 struct cyttsp *cyttsp_probe(const struct cyttsp_bus_ops *bus_ops,
@@ -590,6 +638,8 @@ struct cyttsp *cyttsp_probe(const struct cyttsp_bus_ops *bus_ops,
 	ts->pdata = dev->platform_data;
 	ts->bus_ops = bus_ops;
 	ts->irq = irq;
+	ts->suspended = false;
+	ts->on = false;
 
 	init_completion(&ts->bl_ready);
 	snprintf(ts->phys, sizeof(ts->phys), "%s/input0", dev_name(dev));
