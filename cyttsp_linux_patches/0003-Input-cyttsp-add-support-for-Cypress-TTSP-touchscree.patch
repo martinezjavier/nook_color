@@ -1,25 +1,34 @@
-From 9b55bdd77c327c438fd7551d44a6547763f67188 Mon Sep 17 00:00:00 2001
-From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sun, 20 Nov 2011 06:13:47 +0100
-Subject: [PATCH 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+From d9464af8a27db3b29b480f2a261c7904c5bd2970 Mon Sep 17 00:00:00 2001
+From: Javier Martinez Canillas <javier@dowhile0.org>
+Date: Thu, 5 Jan 2012 00:45:39 +0100
+Subject: [PATCH v8 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
 
 This patch add supports for the Cypress TTSP SPI bus interface.
 
-Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
+Signed-off-by: Javier Martinez Canillas <javier@dowhile0.org>
 ---
- drivers/input/touchscreen/cyttsp_spi.c |  244 ++++++++++++++++++++++++++++++++
- 1 files changed, 244 insertions(+), 0 deletions(-)
+
+Changes for v8:
+	Javier Martinez Canillas (2):
+        - struct cyttsp is inside struct device not struct spi_device
+	- Add error msg when capability is not supported
+
+	Kevin McNeely (1):
+	- SPI xfer function cleanups
+
+ drivers/input/touchscreen/cyttsp_spi.c |  245 ++++++++++++++++++++++++++++++++
+ 1 files changed, 245 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp_spi.c
 
 diff --git a/drivers/input/touchscreen/cyttsp_spi.c b/drivers/input/touchscreen/cyttsp_spi.c
 new file mode 100644
-index 0000000..d2bab79
+index 0000000..3238c7d
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp_spi.c
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,245 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) SPI touchscreen driver.
@@ -29,9 +38,7 @@ index 0000000..d2bab79
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
-+ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
-+ *
-+ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
++ * Copyright (C) 2012 Javier Martinez Canillas <javier@dowhile0.org>
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -118,7 +125,9 @@ index 0000000..d2bab79
 +		break;
 +
 +	default:
-+		BUG();
++		dev_dbg(&spi->dev,
++			"%s: bad operation code=%d\n", __func__, op);
++		return -EINVAL;
 +	}
 +
 +	retval = spi_sync(spi, &msg);
@@ -134,7 +143,7 @@ index 0000000..d2bab79
 +		 */
 +	}
 +
-+	if (rd_buf[CY_SPI_SYNC_BYTE] != CY_SPI_SYNC_ACK1 &&
++	if (rd_buf[CY_SPI_SYNC_BYTE] != CY_SPI_SYNC_ACK1 ||
 +	    rd_buf[CY_SPI_SYNC_BYTE + 1] != CY_SPI_SYNC_ACK2) {
 +		int i;
 +		for (i = 0; i < CY_SPI_CMD_BYTES; i++)
@@ -213,7 +222,7 @@ index 0000000..d2bab79
 +	spi->mode = SPI_MODE_0;
 +	error = spi_setup(spi);
 +	if (error < 0) {
-+		dev_dbg(&spi->dev, "%s: SPI setup error %d\n",
++		dev_err(&spi->dev, "%s: SPI setup error %d\n",
 +			__func__, error);
 +		return error;
 +	}
@@ -263,6 +272,7 @@ index 0000000..d2bab79
 +MODULE_LICENSE("GPL");
 +MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) SPI driver");
 +MODULE_AUTHOR("Cypress");
++MODULE_ALIAS("spi:cyttsp");
 +
 -- 
 1.7.4.1

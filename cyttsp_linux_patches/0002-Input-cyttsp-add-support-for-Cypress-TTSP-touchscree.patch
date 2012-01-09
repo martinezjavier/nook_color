@@ -1,25 +1,34 @@
-From afdbad3f8c34d73d8eed452aa97fbae2779e3ada Mon Sep 17 00:00:00 2001
-From: Javier Martinez Canillas <martinez.javier@gmail.com>
-Date: Sun, 20 Nov 2011 06:12:32 +0100
-Subject: [PATCH 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+From fc66535dc14148ab140eea23239a433cd43d83ad Mon Sep 17 00:00:00 2001
+From: Javier Martinez Canillas <javier@dowhile0.org>
+Date: Thu, 5 Jan 2012 00:44:40 +0100
+Subject: [PATCH v8 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
 
 This patch add supports for the Cypress TTSP I2C bus interface.
 
-Signed-off-by: Javier Martinez Canillas <martinez.javier@gmail.com>
+Signed-off-by: Javier Martinez Canillas <javier@dowhile0.org>
 ---
- drivers/input/touchscreen/cyttsp_i2c.c |  138 ++++++++++++++++++++++++++++++++
- 1 files changed, 138 insertions(+), 0 deletions(-)
+
+Changes for v8:
+	Javier Martinez Canillas (5):
+      	- Check i2c_master_recv() didn't return and error before checking length
+	- Check i2c read completed sucessful
+	- Define module exit macro in i2c driver
+	- Fix return values for I2C transport
+	- Add error msg when capability is not supported
+
+ drivers/input/touchscreen/cyttsp_i2c.c |  137 ++++++++++++++++++++++++++++++++
+ 1 files changed, 137 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp_i2c.c
 
 diff --git a/drivers/input/touchscreen/cyttsp_i2c.c b/drivers/input/touchscreen/cyttsp_i2c.c
 new file mode 100644
-index 0000000..a418928
+index 0000000..cdbf61d
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp_i2c.c
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,137 @@
 +/*
 + * Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) I2C touchscreen driver.
@@ -29,9 +38,7 @@ index 0000000..a418928
 + * CY8CTMA340
 + *
 + * Copyright (C) 2009, 2010, 2011 Cypress Semiconductor, Inc.
-+ * Copyright (C) 2011 Javier Martinez Canillas <martinez.javier@gmail.com>
-+ *
-+ * Multi-touch protocol type B support and cleanups by Javier Martinez Canillas
++ * Copyright (C) 2012 Javier Martinez Canillas <javier@dowhile0.org>
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -70,10 +77,10 @@ index 0000000..a418928
 +
 +	retval = i2c_master_recv(client, values, length);
 +
-+	if (retval > 0 && retval != length)
-+		return -EIO;
++	if (retval < 0)
++		return retval;
 +
-+	return (retval < 0) ? retval : 0;
++	return (retval != length) ? -EIO : 0;
 +}
 +
 +static int cyttsp_i2c_write_block_data(struct device *dev,
@@ -83,15 +90,11 @@ index 0000000..a418928
 +	struct cyttsp *ts = i2c_get_clientdata(client);
 +	int retval;
 +
-+
 +	ts->xfer_buf[0] = addr;
 +	memcpy(&ts->xfer_buf[1], values, length);
 +	retval = i2c_master_send(client, ts->xfer_buf, length + 1);
 +
-+	if (retval != length)
-+		return -EIO;
-+
-+	return 0;
++	return (retval < 0) ? retval : 0;
 +}
 +
 +static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
@@ -105,11 +108,14 @@ index 0000000..a418928
 +{
 +	struct cyttsp *ts;
 +
-+	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
++	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
++		dev_err(&client->dev, "I2C functionality not Supported\n");
 +		return -EIO;
++	}
 +
 +	ts = cyttsp_probe(&cyttsp_i2c_bus_ops, &client->dev, client->irq,
 +			  CY_I2C_DATA_SIZE);
++
 +	if (IS_ERR(ts))
 +		return PTR_ERR(ts);
 +
@@ -154,10 +160,12 @@ index 0000000..a418928
 +{
 +	return i2c_del_driver(&cyttsp_i2c_driver);
 +}
++module_exit(cyttsp_i2c_exit);
 +
 +MODULE_LICENSE("GPL");
 +MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) I2C driver");
 +MODULE_AUTHOR("Cypress");
++MODULE_ALIAS("i2c:cyttsp");
 -- 
 1.7.4.1
 
