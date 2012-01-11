@@ -129,28 +129,18 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 
 	retval = cyttsp_load_bl_regs(ts);
 
-	if (retval < 0) {
-		retval = -ENODEV;
-		goto done;
-	}
+	if (retval < 0)
+		return retval;
 
-	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status)) {
-		if (IS_VALID_APP(ts->bl_data.bl_status))
-			return 0;
-		else
-			return -ENODEV;
-	}
+	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status) &&
+	    IS_VALID_APP(ts->bl_data.bl_status))
+		return 0;
 
-	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
-		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status)))
-			return 1;
-		else
-			return -ENODEV;
-	}
+	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE &&
+	    !IS_OPERATIONAL_ERR(ts->bl_data.bl_status))
+		return 1;
 
-	retval = -ENODEV;
-done:
-	return retval;
+	return -ENODEV;
 }
 
 static int cyttsp_exit_bl_mode(struct cyttsp *ts)
