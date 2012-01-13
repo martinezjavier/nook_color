@@ -38,7 +38,7 @@
 #include <linux/device.h>
 #include <linux/input/cyttsp.h>
 
-#define CY_NUM_RETRY                4 /* max number of retries for read ops */
+#define CY_NUM_RETRY                16 /* max number of retries for read ops */
 
 struct cyttsp_tch {
 	__be16 x, y;

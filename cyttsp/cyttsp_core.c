@@ -92,6 +92,9 @@ static int ttsp_read_block_data(struct cyttsp *ts, u8 command,
 			msleep(CY_DELAY_DFLT);
 	}
 
+	if (tries >= CY_NUM_RETRY)
+		return -EAGAIN;
+
 	return retval;
 }
 
@@ -109,6 +112,9 @@ static int ttsp_write_block_data(struct cyttsp *ts, u8 command,
 		if (retval)
 			msleep(CY_DELAY_DFLT);
 	}
+
+	if (tries >= CY_NUM_RETRY)
+		return -EAGAIN;
 
 	return retval;
 }
@@ -146,7 +152,6 @@ static int cyttsp_bl_app_valid(struct cyttsp *ts)
 static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 {
 	int retval;
-	int tries;
 	u8 bl_cmd[sizeof(bl_command)];
 
 	memcpy(bl_cmd, bl_command, sizeof(bl_command));
@@ -160,15 +165,11 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 	if (retval < 0)
 		return retval;
 
-	/* wait for TTSP Device to complete switch to Operational mode */
-	tries = 0;
-	do {
-		msleep(CY_DELAY_DFLT);
-		retval = cyttsp_load_bl_regs(ts);
-	} while ((retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status)) &&
-		(tries++ < CY_NUM_RETRY));
+	/* wait for TTSP Device to complete the operation */
+	msleep(CY_DELAY_DFLT);
+	retval = cyttsp_load_bl_regs(ts);
 
-	if (tries >= CY_NUM_RETRY)
+	if (retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status))
 		return -ENODEV;
 
 	return retval;
@@ -178,7 +179,6 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 {
 	struct cyttsp_xydata xy_data;
 	int retval;
-	int tries = 0;
 	u8 cmd = CY_OPERATE_MODE;
 
 	retval = ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), &cmd);
@@ -187,13 +187,10 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 		return retval;
 
 	/* wait for TTSP Device to complete switch to Operational mode */
-	do {
-		retval = ttsp_read_block_data(ts, CY_REG_BASE,
-			sizeof(xy_data), &(xy_data));
-	} while ((retval || xy_data.act_dist == CY_ACT_DIST_DFLT) &&
-		 (tries++ < CY_NUM_RETRY));
+	retval = ttsp_read_block_data(ts, CY_REG_BASE,
+				      sizeof(xy_data), &(xy_data));
 
-	if (tries >= CY_NUM_RETRY)
+	if (retval || xy_data.act_dist == CY_ACT_DIST_DFLT)
 		return -EAGAIN;
 
 	return retval;
@@ -202,7 +199,6 @@ static int cyttsp_set_operational_mode(struct cyttsp *ts)
 static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 {
 	int retval;
-	int tries;
 	u8 cmd = CY_SYSINFO_MODE;
 
 	memset(&(ts->sysinfo_data), 0, sizeof(struct cyttsp_sysinfo_data));
@@ -213,16 +209,11 @@ static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 		return retval;
 
 	/* read sysinfo registers */
-	tries = 0;
-	do {
-		msleep(CY_DELAY_DFLT);
-		retval = ttsp_read_block_data(ts, CY_REG_BASE,
-			sizeof(ts->sysinfo_data), &ts->sysinfo_data);
-	} while ((retval || (!ts->sysinfo_data.tts_verh &&
-			     !ts->sysinfo_data.tts_verl)) &&
-		 (tries++ < CY_NUM_RETRY));
+	msleep(CY_DELAY_DFLT);
+	retval = ttsp_read_block_data(ts, CY_REG_BASE, sizeof(ts->sysinfo_data),
+				      &ts->sysinfo_data);
 
-	if (tries >= CY_NUM_RETRY)
+	if (retval || (!ts->sysinfo_data.tts_verh && !ts->sysinfo_data.tts_verl))
 		return -EAGAIN;
 
 	return retval;
