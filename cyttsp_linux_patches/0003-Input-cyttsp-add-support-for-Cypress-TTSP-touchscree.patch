@@ -1,7 +1,7 @@
-From d9464af8a27db3b29b480f2a261c7904c5bd2970 Mon Sep 17 00:00:00 2001
+From 0bb4ff261ba30c0ee3883da013252a0490ee9fdf Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <javier@dowhile0.org>
 Date: Thu, 5 Jan 2012 00:45:39 +0100
-Subject: [PATCH v8 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
+Subject: [PATCH v9 3/3] Input: cyttsp - add support for Cypress TTSP touchscreen SPI bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -10,15 +10,6 @@ This patch add supports for the Cypress TTSP SPI bus interface.
 
 Signed-off-by: Javier Martinez Canillas <javier@dowhile0.org>
 ---
-
-Changes for v8:
-	Javier Martinez Canillas (2):
-        - struct cyttsp is inside struct device not struct spi_device
-	- Add error msg when capability is not supported
-
-	Kevin McNeely (1):
-	- SPI xfer function cleanups
-
  drivers/input/touchscreen/cyttsp_spi.c |  245 ++++++++++++++++++++++++++++++++
  1 files changed, 245 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp_spi.c

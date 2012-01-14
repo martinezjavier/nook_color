@@ -1,7 +1,7 @@
-From fc66535dc14148ab140eea23239a433cd43d83ad Mon Sep 17 00:00:00 2001
+From e7e04a56832e50bde89e2fa153ffbbb3c18849e0 Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <javier@dowhile0.org>
 Date: Thu, 5 Jan 2012 00:44:40 +0100
-Subject: [PATCH v8 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
+Subject: [PATCH v9 2/3] Input: cyttsp - add support for Cypress TTSP touchscreen I2C bus interface
 
 The driver is composed of a core driver that process the data sent by
 the contacts and a set of bus specific interface modules.
@@ -10,15 +10,6 @@ This patch add supports for the Cypress TTSP I2C bus interface.
 
 Signed-off-by: Javier Martinez Canillas <javier@dowhile0.org>
 ---
-
-Changes for v8:
-	Javier Martinez Canillas (5):
-      	- Check i2c_master_recv() didn't return and error before checking length
-	- Check i2c read completed sucessful
-	- Define module exit macro in i2c driver
-	- Fix return values for I2C transport
-	- Add error msg when capability is not supported
-
  drivers/input/touchscreen/cyttsp_i2c.c |  137 ++++++++++++++++++++++++++++++++
  1 files changed, 137 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp_i2c.c

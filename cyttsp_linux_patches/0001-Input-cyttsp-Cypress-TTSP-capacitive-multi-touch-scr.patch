@@ -1,7 +1,7 @@
-From 592038e31fc32e50573408bf3dbf4bebf425a7aa Mon Sep 17 00:00:00 2001
+From 83475f1343ce7548df147548eed7cdf2adf3769f Mon Sep 17 00:00:00 2001
 From: Javier Martinez Canillas <javier@dowhile0.org>
 Date: Thu, 5 Jan 2012 00:33:54 +0100
-Subject: [PATCH v8 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
+Subject: [PATCH v9 1/3] Input: cyttsp - Cypress TTSP capacitive multi-touch screen support
 
 Cypress TrueTouch(tm) Standard Product controllers are found in
 a wide range of embedded devices. This driver add support for a
@@ -17,40 +17,25 @@ adds the base core TTSP driver.
 Signed-off-by: Javier Martinez Canillas <javier@dowhile0.org>
 ---
 
-Changes for v8:
-    Dmitry Torokhov (9):
-    - Fix use-after-free in cyttsp_release
-    - Remove ext() method from bus ops
-    - Move up into main touchscreen directory
-    - Rework Kconfig entries
-    - Guard PM methods with CONFIG_PM_SLEEP
-    - Device does not belong in bus structure
-    - Set up bus type in input device
-    - Use unified structure for ts object
-    - Consolidate PM methods
-
-    Javier Martinez Canillas (5):
-    - Add <linux/device.h> macro to cyttsp_core.h
-    - Soft reset returns negative on error, not 0
-    - Use CY_NUM_RETRY instead of CY_DELAY_MAX for retries
-    - Add suspended an on boolean to cyttsp core
-    - Rework PM functions
+Changes for v9 suggested by Henrik Rydberg:
+    - Simplify cyttsp_bl_app_valid() function
+    - Remove retry logic since is already done in ttsp[read | write]_block_data
 
  drivers/input/touchscreen/Kconfig       |   31 ++
  drivers/input/touchscreen/Makefile      |    3 +
- drivers/input/touchscreen/cyttsp_core.c |  721 +++++++++++++++++++++++++++++++
+ drivers/input/touchscreen/cyttsp_core.c |  703 +++++++++++++++++++++++++++++++
  drivers/input/touchscreen/cyttsp_core.h |  141 ++++++
  include/linux/input/cyttsp.h            |   69 +++
- 5 files changed, 965 insertions(+), 0 deletions(-)
+ 5 files changed, 947 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/touchscreen/cyttsp_core.c
  create mode 100644 drivers/input/touchscreen/cyttsp_core.h
  create mode 100644 include/linux/input/cyttsp.h
 
 diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
-index 3488ffe..d2feb4e 100644
+index 4af2a18..60674e1 100644
 --- a/drivers/input/touchscreen/Kconfig
 +++ b/drivers/input/touchscreen/Kconfig
-@@ -136,6 +136,37 @@ config TOUCHSCREEN_CY8CTMG110
+@@ -149,6 +149,37 @@ config TOUCHSCREEN_CY8CTMG110
  	  To compile this driver as a module, choose M here: the
  	  module will be called cy8ctmg110_ts.
  
@@ -89,10 +74,10 @@ index 3488ffe..d2feb4e 100644
  	tristate "Touchscreen support for Dialog Semiconductor DA9034"
  	depends on PMIC_DA903X
 diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
-index f957676..9458172 100644
+index 496091e..62f3265 100644
 --- a/drivers/input/touchscreen/Makefile
 +++ b/drivers/input/touchscreen/Makefile
-@@ -17,6 +17,9 @@ obj-$(CONFIG_TOUCHSCREEN_ATMEL_TSADCC)	+= atmel_tsadcc.o
+@@ -18,6 +18,9 @@ obj-$(CONFIG_TOUCHSCREEN_AUO_PIXCIR)	+= auo-pixcir-ts.o
  obj-$(CONFIG_TOUCHSCREEN_BITSY)		+= h3600_ts_input.o
  obj-$(CONFIG_TOUCHSCREEN_BU21013)       += bu21013_ts.o
  obj-$(CONFIG_TOUCHSCREEN_CY8CTMG110)	+= cy8ctmg110_ts.o
@@ -104,10 +89,10 @@ index f957676..9458172 100644
  obj-$(CONFIG_TOUCHSCREEN_HAMPSHIRE)	+= hampshire.o
 diff --git a/drivers/input/touchscreen/cyttsp_core.c b/drivers/input/touchscreen/cyttsp_core.c
 new file mode 100644
-index 0000000..896371c
+index 0000000..9ba69bf
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp_core.c
-@@ -0,0 +1,721 @@
+@@ -0,0 +1,703 @@
 +/*
 + * Core Source for:
 + * Cypress TrueTouch(TM) Standard Product (TTSP) touchscreen drivers.
@@ -202,6 +187,9 @@ index 0000000..896371c
 +			msleep(CY_DELAY_DFLT);
 +	}
 +
++	if (tries >= CY_NUM_RETRY)
++		return -EAGAIN;
++
 +	return retval;
 +}
 +
@@ -219,6 +207,9 @@ index 0000000..896371c
 +		if (retval)
 +			msleep(CY_DELAY_DFLT);
 +	}
++
++	if (tries >= CY_NUM_RETRY)
++		return -EAGAIN;
 +
 +	return retval;
 +}
@@ -239,34 +230,23 @@ index 0000000..896371c
 +
 +	retval = cyttsp_load_bl_regs(ts);
 +
-+	if (retval < 0) {
-+		retval = -ENODEV;
-+		goto done;
-+	}
++	if (retval < 0)
++		return retval;
 +
-+	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status)) {
-+		if (IS_VALID_APP(ts->bl_data.bl_status))
-+			return 0;
-+		else
-+			return -ENODEV;
-+	}
++	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status) &&
++	    IS_VALID_APP(ts->bl_data.bl_status))
++		return 0;
 +
-+	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE) {
-+		if (!(IS_OPERATIONAL_ERR(ts->bl_data.bl_status)))
-+			return 1;
-+		else
-+			return -ENODEV;
-+	}
++	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE &&
++	    !IS_OPERATIONAL_ERR(ts->bl_data.bl_status))
++		return 1;
 +
-+	retval = -ENODEV;
-+done:
-+	return retval;
++	return -ENODEV;
 +}
 +
 +static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 +{
 +	int retval;
-+	int tries;
 +	u8 bl_cmd[sizeof(bl_command)];
 +
 +	memcpy(bl_cmd, bl_command, sizeof(bl_command));
@@ -280,15 +260,11 @@ index 0000000..896371c
 +	if (retval < 0)
 +		return retval;
 +
-+	/* wait for TTSP Device to complete switch to Operational mode */
-+	tries = 0;
-+	do {
-+		msleep(CY_DELAY_DFLT);
-+		retval = cyttsp_load_bl_regs(ts);
-+	} while ((retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status)) &&
-+		(tries++ < CY_NUM_RETRY));
++	/* wait for TTSP Device to complete the operation */
++	msleep(CY_DELAY_DFLT);
++	retval = cyttsp_load_bl_regs(ts);
 +
-+	if (tries >= CY_NUM_RETRY)
++	if (retval || GET_BOOTLOADERMODE(ts->bl_data.bl_status))
 +		return -ENODEV;
 +
 +	return retval;
@@ -298,7 +274,6 @@ index 0000000..896371c
 +{
 +	struct cyttsp_xydata xy_data;
 +	int retval;
-+	int tries = 0;
 +	u8 cmd = CY_OPERATE_MODE;
 +
 +	retval = ttsp_write_block_data(ts, CY_REG_BASE, sizeof(cmd), &cmd);
@@ -307,13 +282,10 @@ index 0000000..896371c
 +		return retval;
 +
 +	/* wait for TTSP Device to complete switch to Operational mode */
-+	do {
-+		retval = ttsp_read_block_data(ts, CY_REG_BASE,
-+			sizeof(xy_data), &(xy_data));
-+	} while ((retval || xy_data.act_dist == CY_ACT_DIST_DFLT) &&
-+		 (tries++ < CY_NUM_RETRY));
++	retval = ttsp_read_block_data(ts, CY_REG_BASE,
++				      sizeof(xy_data), &(xy_data));
 +
-+	if (tries >= CY_NUM_RETRY)
++	if (retval || xy_data.act_dist == CY_ACT_DIST_DFLT)
 +		return -EAGAIN;
 +
 +	return retval;
@@ -322,7 +294,6 @@ index 0000000..896371c
 +static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 +{
 +	int retval;
-+	int tries;
 +	u8 cmd = CY_SYSINFO_MODE;
 +
 +	memset(&(ts->sysinfo_data), 0, sizeof(struct cyttsp_sysinfo_data));
@@ -333,16 +304,12 @@ index 0000000..896371c
 +		return retval;
 +
 +	/* read sysinfo registers */
-+	tries = 0;
-+	do {
-+		msleep(CY_DELAY_DFLT);
-+		retval = ttsp_read_block_data(ts, CY_REG_BASE,
-+			sizeof(ts->sysinfo_data), &ts->sysinfo_data);
-+	} while ((retval || (!ts->sysinfo_data.tts_verh &&
-+			     !ts->sysinfo_data.tts_verl)) &&
-+		 (tries++ < CY_NUM_RETRY));
++	msleep(CY_DELAY_DFLT);
++	retval = ttsp_read_block_data(ts, CY_REG_BASE, sizeof(ts->sysinfo_data),
++				      &ts->sysinfo_data);
 +
-+	if (tries >= CY_NUM_RETRY)
++	if (retval || (!ts->sysinfo_data.tts_verh &&
++		       !ts->sysinfo_data.tts_verl))
 +		return -EAGAIN;
 +
 +	return retval;
@@ -831,7 +798,7 @@ index 0000000..896371c
 +
 diff --git a/drivers/input/touchscreen/cyttsp_core.h b/drivers/input/touchscreen/cyttsp_core.h
 new file mode 100644
-index 0000000..2ab0161
+index 0000000..2b48c17
 --- /dev/null
 +++ b/drivers/input/touchscreen/cyttsp_core.h
 @@ -0,0 +1,141 @@
@@ -875,7 +842,7 @@ index 0000000..2ab0161
 +#include <linux/device.h>
 +#include <linux/input/cyttsp.h>
 +
-+#define CY_NUM_RETRY                4 /* max number of retries for read ops */
++#define CY_NUM_RETRY                16 /* max number of retries for read ops */
 +
 +struct cyttsp_tch {
 +	__be16 x, y;
