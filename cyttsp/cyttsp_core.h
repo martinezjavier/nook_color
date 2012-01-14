@@ -109,10 +109,10 @@ struct cyttsp_bootloader_data {
 };
 
 struct cyttsp_bus_ops {
-       u16 bustype;
-       int (*write)(struct device *dev,
-                    u8 addr, u8 length, const void *values);
-       int (*read)(struct device *dev, u8 addr, u8 length, void *values);
+	u16 bustype;
+	int (*write)(struct device *dev,
+		     u8 addr, u8 length, const void *values);
+	int (*read)(struct device *dev, u8 addr, u8 length, void *values);
 };
 
 struct cyttsp {

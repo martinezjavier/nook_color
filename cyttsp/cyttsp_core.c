@@ -213,7 +213,8 @@ static int cyttsp_set_sysinfo_mode(struct cyttsp *ts)
 	retval = ttsp_read_block_data(ts, CY_REG_BASE, sizeof(ts->sysinfo_data),
 				      &ts->sysinfo_data);
 
-	if (retval || (!ts->sysinfo_data.tts_verh && !ts->sysinfo_data.tts_verl))
+	if (retval || (!ts->sysinfo_data.tts_verh &&
+		       !ts->sysinfo_data.tts_verl))
 		return -EAGAIN;
 
 	return retval;
@@ -516,8 +517,8 @@ static int __cyttsp_disable(struct cyttsp *ts)
 
 	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
 		sleep_mode = ts->pdata->use_sleep;
-		retval = ttsp_write_block_data(ts,
-					       CY_REG_BASE, sizeof(sleep_mode), &sleep_mode);
+		retval = ttsp_write_block_data(ts, CY_REG_BASE,
+					       sizeof(sleep_mode), &sleep_mode);
 		if (retval >= 0) {
 			ts->power_state = CY_SLEEP_STATE;
 			disable_irq(ts->irq);
