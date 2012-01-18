@@ -488,18 +488,16 @@ static int __cyttsp_enable(struct cyttsp *ts)
 	struct cyttsp_xydata xydata;
 	int retval = 0;
 
-	if (ts->pdata->use_sleep && ts->power_state != CY_ACTIVE_STATE) {
+	if (ts->power_state != CY_ACTIVE_STATE) {
 
 		if (ts->pdata->wakeup)
 			retval = ts->pdata->wakeup();
-		else
-			retval = -ENOSYS;
 
-		if (retval >= 0) {
+		if (retval == 0) {
 			retval = ttsp_read_block_data(ts, CY_REG_BASE,
 						      sizeof(xydata),
 						      &xydata);
-			if (retval >= 0 &&
+			if (retval == 0 &&
 			    !GET_HSTMODE(xydata.hst_mode)) {
 				ts->power_state = CY_ACTIVE_STATE;
 				enable_irq(ts->irq);
@@ -512,14 +510,13 @@ static int __cyttsp_enable(struct cyttsp *ts)
 
 static int __cyttsp_disable(struct cyttsp *ts)
 {
-	u8 sleep_mode = 0;
+	u8 cmd = CY_LOW_POWER_MODE;
 	int retval = 0;
 
-	if (ts->pdata->use_sleep && ts->power_state == CY_ACTIVE_STATE) {
-		sleep_mode = ts->pdata->use_sleep;
+	if (ts->power_state == CY_ACTIVE_STATE) {
 		retval = ttsp_write_block_data(ts, CY_REG_BASE,
-					       sizeof(sleep_mode), &sleep_mode);
-		if (retval >= 0) {
+					       sizeof(cmd), &cmd);
+		if (retval == 0) {
 			ts->power_state = CY_SLEEP_STATE;
 			disable_irq(ts->irq);
 		}
