@@ -129,26 +129,6 @@ static int cyttsp_load_bl_regs(struct cyttsp *ts)
 				     &ts->bl_data);
 }
 
-static int cyttsp_bl_app_valid(struct cyttsp *ts)
-{
-	int retval;
-
-	retval = cyttsp_load_bl_regs(ts);
-
-	if (retval < 0)
-		return retval;
-
-	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status) &&
-	    IS_VALID_APP(ts->bl_data.bl_status))
-		return 0;
-
-	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE &&
-	    !IS_OPERATIONAL_ERR(ts->bl_data.bl_status))
-		return 1;
-
-	return -ENODEV;
-}
-
 static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 {
 	int retval;
@@ -442,45 +422,46 @@ static int cyttsp_power_on(struct cyttsp *ts)
 
 	retval = cyttsp_soft_reset(ts);
 	if (retval < 0)
-		goto bypass;
+		return retval;
 
-	retval = cyttsp_bl_app_valid(ts);
+	retval = cyttsp_load_bl_regs(ts);
 	if (retval < 0)
-		goto bypass;
-	else if (retval > 0)
-		goto no_bl_bypass;
+		return retval;
 
-	retval = cyttsp_exit_bl_mode(ts);
+	if (GET_BOOTLOADERMODE(ts->bl_data.bl_status) &&
+	    IS_VALID_APP(ts->bl_data.bl_status))
+		retval = cyttsp_exit_bl_mode(ts);
 
 	if (retval < 0)
-		goto bypass;
+		return retval;
+	else
+		ts->power_state = CY_IDLE_STATE;
 
-	ts->power_state = CY_IDLE_STATE;
+	if (GET_HSTMODE(ts->bl_data.bl_file) == CY_OPERATE_MODE &&
+	    !IS_OPERATIONAL_ERR(ts->bl_data.bl_status)) {
+		retval = cyttsp_set_sysinfo_mode(ts);
+		if (retval < 0)
+			return retval;
 
-no_bl_bypass:
-	retval = cyttsp_set_sysinfo_mode(ts);
-	if (retval < 0)
-		goto bypass;
+		retval = cyttsp_set_sysinfo_regs(ts);
+		if (retval < 0)
+			return retval;
 
-	retval = cyttsp_set_sysinfo_regs(ts);
-	if (retval < 0)
-		goto bypass;
+		retval = cyttsp_set_operational_mode(ts);
+		if (retval < 0)
+			return retval;
 
-	retval = cyttsp_set_operational_mode(ts);
-	if (retval < 0)
-		goto bypass;
+		/* init active distance */
+		retval = cyttsp_act_dist_setup(ts);
+		if (retval < 0)
+			return retval;
 
-	/* init active distance */
-	retval = cyttsp_act_dist_setup(ts);
-	if (retval < 0)
-		goto bypass;
+		ts->power_state = CY_ACTIVE_STATE;
 
-	ts->power_state = CY_ACTIVE_STATE;
-	retval = 0;
+		return 0;
+	}
 
-bypass:
-	cyttsp_pr_state(ts);
-	return retval;
+	return -ENODEV;
 }
 
 static int __cyttsp_enable(struct cyttsp *ts)
@@ -572,9 +553,10 @@ static int cyttsp_open(struct input_dev *dev)
 	if (!ts->on) {
 		retval = cyttsp_power_on(ts);
 
-		if (retval)
+		if (retval) {
+			cyttsp_pr_state(ts);
 			return retval;
-		else
+		} else
 			ts->on = true;
 	}
 
