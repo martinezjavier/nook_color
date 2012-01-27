@@ -33,29 +33,30 @@
 #include <linux/input.h>
 #include <linux/spi/spi.h>
 
-#define CY_SPI_WR_OP      0x00 /* r/~w */
-#define CY_SPI_RD_OP      0x01
-#define CY_SPI_CMD_BYTES  4
-#define CY_SPI_SYNC_BYTE  2
-#define CY_SPI_SYNC_ACK1  0x62 /* from protocol v.2 */
-#define CY_SPI_SYNC_ACK2  0x9D /* from protocol v.2 */
-#define CY_SPI_DATA_SIZE  128
-#define CY_SPI_DATA_BUF_SIZE (CY_SPI_CMD_BYTES + CY_SPI_DATA_SIZE)
-#define CY_SPI_BITS_PER_WORD 8
+#define CY_SPI_WR_OP		0x00 /* r/~w */
+#define CY_SPI_RD_OP		0x01
+#define CY_SPI_CMD_BYTES	4
+#define CY_SPI_SYNC_BYTE	2
+#define CY_SPI_SYNC_ACK1	0x62 /* from protocol v.2 */
+#define CY_SPI_SYNC_ACK2	0x9D /* from protocol v.2 */
+#define CY_SPI_DATA_SIZE	128
+#define CY_SPI_DATA_BUF_SIZE	(CY_SPI_CMD_BYTES + CY_SPI_DATA_SIZE)
+#define CY_SPI_BITS_PER_WORD	8
 
-static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
+static int cyttsp_spi_xfer(u8 op, struct device *dev,
 			   u8 reg, u8 *buf, int length)
 {
+	struct spi_device *spi = to_spi_device(dev);
 	struct cyttsp *ts = spi_get_drvdata(spi);
 	struct spi_message msg;
 	struct spi_transfer xfer[2];
 	u8 *wr_buf = &ts->xfer_buf[0];
 	u8 *rd_buf = &ts->xfer_buf[CY_SPI_DATA_BUF_SIZE];
 	int retval;
+	int i;
 
 	if (length > CY_SPI_DATA_SIZE) {
-		dev_dbg(&spi->dev, "%s: length %d is too big.\n",
-			__func__, length);
+		dev_err(dev, "%s: length %d is too big.\n", __func__, length);
 		return -EINVAL;
 	}
 
@@ -94,15 +95,13 @@ static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
 		break;
 
 	default:
-		dev_dbg(&spi->dev,
-			"%s: bad operation code=%d\n", __func__, op);
+		dev_err(dev, "%s: bad operation code=%d\n", __func__, op);
 		return -EINVAL;
 	}
 
 	retval = spi_sync(spi, &msg);
 	if (retval < 0) {
-		dev_dbg(&spi->dev,
-			"%s: spi_sync() error %d, len=%d, op=%d\n",
+		dev_dbg(dev, "%s: spi_sync() error %d, len=%d, op=%d\n",
 			__func__, retval, xfer[1].len, op);
 
 		/*
@@ -114,18 +113,17 @@ static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
 
 	if (rd_buf[CY_SPI_SYNC_BYTE] != CY_SPI_SYNC_ACK1 ||
 	    rd_buf[CY_SPI_SYNC_BYTE + 1] != CY_SPI_SYNC_ACK2) {
-		int i;
+
+		dev_dbg(dev, "%s: operation %d failed\n", __func__, op);
+
 		for (i = 0; i < CY_SPI_CMD_BYTES; i++)
-			dev_dbg(&spi->dev,
-				"%s: test rd_buf[%d]:0x%02x\n",
+			dev_dbg(dev, "%s: test rd_buf[%d]:0x%02x\n",
 				__func__, i, rd_buf[i]);
 		for (i = 0; i < length; i++)
-			dev_dbg(&spi->dev,
-				"%s: test buf[%d]:0x%02x\n",
+			dev_dbg(dev, "%s: test buf[%d]:0x%02x\n",
 				__func__, i, buf[i]);
 
-		/* signal ACK error so silent retry */
-		return 1;
+		return -EIO;
 	}
 
 	return 0;
@@ -134,51 +132,19 @@ static int cyttsp_spi_xfer(u8 op, struct spi_device *spi,
 static int cyttsp_spi_read_block_data(struct device *dev,
 				      u8 addr, u8 length, void *data)
 {
-	struct spi_device *spi = to_spi_device(dev);
-	int retval;
-
-	retval = cyttsp_spi_xfer(CY_SPI_RD_OP, spi, addr, data, length);
-	if (retval < 0)
-		dev_err(dev, "cyttsp_spi_read_block_data failed, err: %d\n",
-			retval);
-
-	/*
-	 * Do not print the above error if the data sync bytes were not found.
-	 * This is a normal condition for the bootloader loader startup and need
-	 * to retry until data sync bytes are found.
-	 */
-	if (retval > 0)
-		retval = -EIO;  /* now signal fail; so retry can be done */
-
-	return retval;
+	return cyttsp_spi_xfer(CY_SPI_RD_OP, dev, addr, data, length);
 }
 
 static int cyttsp_spi_write_block_data(struct device *dev,
 				       u8 addr, u8 length, const void *data)
 {
-	struct spi_device *spi = to_spi_device(dev);
-	int retval;
-
-	retval = cyttsp_spi_xfer(CY_SPI_WR_OP, spi, addr, (void *)data, length);
-	if (retval < 0)
-		dev_err(dev, "cyttsp_spi_write_block_data failed, err: %d\n",
-			retval);
-
-	/*
-	 * Do not print the above error if the data sync bytes were not found.
-	 * This is a normal condition for the bootloader loader startup and need
-	 * to retry until data sync bytes are found.
-	 */
-	if (retval > 0)
-		retval = -EIO;  /* now signal fail; so retry can be done */
-
-	return retval;
+	return cyttsp_spi_xfer(CY_SPI_WR_OP, dev, addr, (void *)data, length);
 }
 
 static const struct cyttsp_bus_ops cyttsp_spi_bus_ops = {
-	.bustype        = BUS_SPI,
-	.write          = cyttsp_spi_write_block_data,
-	.read           = cyttsp_spi_read_block_data,
+	.bustype	= BUS_SPI,
+	.write		= cyttsp_spi_write_block_data,
+	.read		= cyttsp_spi_read_block_data,
 };
 
 static int __devinit cyttsp_spi_probe(struct spi_device *spi)
@@ -208,7 +174,7 @@ static int __devinit cyttsp_spi_probe(struct spi_device *spi)
 
 static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 {
-	struct cyttsp *ts = dev_get_drvdata(&spi->dev);
+	struct cyttsp *ts = spi_get_drvdata(spi);
 
 	cyttsp_remove(ts);
 
@@ -217,9 +183,9 @@ static int __devexit cyttsp_spi_remove(struct spi_device *spi)
 
 static struct spi_driver cyttsp_spi_driver = {
 	.driver = {
-		.name   = CY_SPI_NAME,
-		.owner  = THIS_MODULE,
-		.pm     = &cyttsp_pm_ops,
+		.name	= CY_SPI_NAME,
+		.owner	= THIS_MODULE,
+		.pm	= &cyttsp_pm_ops,
 	},
 	.probe  = cyttsp_spi_probe,
 	.remove = __devexit_p(cyttsp_spi_remove),
@@ -242,4 +208,3 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cypress TrueTouch(R) Standard Product (TTSP) SPI driver");
 MODULE_AUTHOR("Cypress");
 MODULE_ALIAS("spi:cyttsp");
-

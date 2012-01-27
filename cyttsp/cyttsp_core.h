@@ -115,6 +115,12 @@ struct cyttsp_bus_ops {
 	int (*read)(struct device *dev, u8 addr, u8 length, void *values);
 };
 
+enum cyttsp_state {
+	CY_IDLE_STATE,
+	CY_ACTIVE_STATE,
+	CY_BL_STATE,
+};
+
 struct cyttsp {
 	struct device *dev;
 	int irq;
@@ -124,10 +130,10 @@ struct cyttsp {
 	const struct cyttsp_bus_ops *bus_ops;
 	struct cyttsp_bootloader_data bl_data;
 	struct cyttsp_sysinfo_data sysinfo_data;
+	struct cyttsp_xydata xy_data;
 	struct completion bl_ready;
-	enum cyttsp_powerstate power_state;
+	enum cyttsp_state state;
 	bool suspended;
-	bool on;
 
 	u8 xfer_buf[] ____cacheline_aligned;
 };

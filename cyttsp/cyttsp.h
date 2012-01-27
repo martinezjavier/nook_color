@@ -40,15 +40,6 @@
 /* Active distance in pixels for a gesture to be reported */
 #define CY_ACT_DIST_DFLT 0xF8 /* pixels */
 
-enum cyttsp_powerstate {
-	CY_IDLE_STATE,
-	CY_ACTIVE_STATE,
-	CY_LOW_PWR_STATE,
-	CY_SLEEP_STATE,
-	CY_BL_STATE,
-	CY_INVALID_STATE	/* always last in the list */
-};
-
 struct cyttsp_platform_data {
 	u32 maxx;
 	u32 maxy;

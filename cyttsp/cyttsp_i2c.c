@@ -32,24 +32,33 @@
 #include <linux/i2c.h>
 #include <linux/input.h>
 
-#define CY_I2C_DATA_SIZE  128
+#define CY_I2C_DATA_SIZE	128
 
 static int cyttsp_i2c_read_block_data(struct device *dev,
 				      u8 addr, u8 length, void *values)
 {
 	struct i2c_client *client = to_i2c_client(dev);
+	struct i2c_msg msgs[] = {
+		{
+			.addr = client->addr,
+			.flags = 0,
+			.len = 1,
+			.buf = &addr,
+		},
+		{
+			.addr = client->addr,
+			.flags = I2C_M_RD,
+			.len = length,
+			.buf = values,
+		},
+	};
 	int retval;
 
-	retval = i2c_master_send(client, &addr, 1);
+	retval = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
 	if (retval < 0)
 		return retval;
 
-	retval = i2c_master_recv(client, values, length);
-
-	if (retval < 0)
-		return retval;
-
-	return (retval != length) ? -EIO : 0;
+	return retval != ARRAY_SIZE(msgs) ? -EIO : 0;
 }
 
 static int cyttsp_i2c_write_block_data(struct device *dev,
@@ -61,14 +70,15 @@ static int cyttsp_i2c_write_block_data(struct device *dev,
 
 	ts->xfer_buf[0] = addr;
 	memcpy(&ts->xfer_buf[1], values, length);
+
 	retval = i2c_master_send(client, ts->xfer_buf, length + 1);
 
-	return (retval < 0) ? retval : 0;
+	return retval < 0 ? retval : 0;
 }
 
 static const struct cyttsp_bus_ops cyttsp_i2c_bus_ops = {
-	.bustype        = BUS_I2C,
-	.write          = cyttsp_i2c_write_block_data,
+	.bustype	= BUS_I2C,
+	.write		= cyttsp_i2c_write_block_data,
 	.read           = cyttsp_i2c_read_block_data,
 };
 
@@ -110,13 +120,13 @@ MODULE_DEVICE_TABLE(i2c, cyttsp_i2c_id);
 
 static struct i2c_driver cyttsp_i2c_driver = {
 	.driver = {
-		.name   = CY_I2C_NAME,
-		.owner  = THIS_MODULE,
-		.pm     = &cyttsp_pm_ops,
+		.name	= CY_I2C_NAME,
+		.owner	= THIS_MODULE,
+		.pm	= &cyttsp_pm_ops,
 	},
-	.probe          = cyttsp_i2c_probe,
-	.remove         = __devexit_p(cyttsp_i2c_remove),
-	.id_table       = cyttsp_i2c_id,
+	.probe		= cyttsp_i2c_probe,
+	.remove		= __devexit_p(cyttsp_i2c_remove),
+	.id_table	= cyttsp_i2c_id,
 };
 
 static int __init cyttsp_i2c_init(void)
