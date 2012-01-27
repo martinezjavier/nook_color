@@ -53,7 +53,6 @@ struct cyttsp_platform_data {
 	u32 maxx;
 	u32 maxy;
 	bool use_hndshk;
-	bool use_sleep;
 	u8 act_dist;	/* Active distance */
 	u8 act_intrvl;  /* Active refresh interval; ms */
 	u8 tch_tmout;   /* Active touch timeout; ms */
