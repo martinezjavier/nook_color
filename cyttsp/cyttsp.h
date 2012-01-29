@@ -48,7 +48,6 @@ struct cyttsp_platform_data {
 	u8 act_intrvl;  /* Active refresh interval; ms */
 	u8 tch_tmout;   /* Active touch timeout; ms */
 	u8 lp_intrvl;   /* Low power refresh interval; ms */
-	int (*wakeup)(void);
 	int (*init)(void);
 	void (*exit)(void);
 	char *name;

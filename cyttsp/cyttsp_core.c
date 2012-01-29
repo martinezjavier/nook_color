@@ -424,16 +424,12 @@ static int cyttsp_enable(struct cyttsp *ts)
 {
 	int error;
 
-	// FIXME: Why do we need wakeup? The system is already woken up
-	// so I assume this is device wakeup. It should be generic, just
-	// like suspend is generic.
-	// Is there CY_FULL_POWER_MODE that is opposite to CY_LOW_POWER_MODE?
-	if (ts->pdata->wakeup) {
-		error = ts->pdata->wakeup();
-		if (error)
-			return error;
-	}
-
+       /*
+        * The device firmware can wake on an I2C or SPI memory slave address
+        * match. So just reading a register is sufficient to wake up the device
+        * The first read attempt will fail but it will wake it up making the
+        * second read attempt successful.
+        */
 	error = ttsp_read_block_data(ts, CY_REG_BASE,
 				     sizeof(ts->xy_data), &ts->xy_data);
 	if (error)
