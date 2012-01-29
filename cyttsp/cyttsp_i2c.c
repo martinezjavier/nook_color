@@ -34,10 +34,10 @@
 
 #define CY_I2C_DATA_SIZE	128
 
-static int cyttsp_i2c_read_block_data(struct device *dev,
+static int cyttsp_i2c_read_block_data(struct cyttsp *ts,
 				      u8 addr, u8 length, void *values)
 {
-	struct i2c_client *client = to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(ts->dev);
 	struct i2c_msg msgs[] = {
 		{
 			.addr = client->addr,
@@ -61,11 +61,10 @@ static int cyttsp_i2c_read_block_data(struct device *dev,
 	return retval != ARRAY_SIZE(msgs) ? -EIO : 0;
 }
 
-static int cyttsp_i2c_write_block_data(struct device *dev,
+static int cyttsp_i2c_write_block_data(struct cyttsp *ts,
 				       u8 addr, u8 length, const void *values)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct cyttsp *ts = i2c_get_clientdata(client);
+	struct i2c_client *client = to_i2c_client(ts->dev);
 	int retval;
 
 	ts->xfer_buf[0] = addr;

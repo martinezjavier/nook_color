@@ -108,11 +108,13 @@ struct cyttsp_bootloader_data {
 	u8 cid_2;
 };
 
+struct cyttsp;
+
 struct cyttsp_bus_ops {
 	u16 bustype;
-	int (*write)(struct device *dev,
+	int (*write)(struct cyttsp *ts,
 		     u8 addr, u8 length, const void *values);
-	int (*read)(struct device *dev, u8 addr, u8 length, void *values);
+	int (*read)(struct cyttsp *ts, u8 addr, u8 length, void *values);
 };
 
 enum cyttsp_state {
