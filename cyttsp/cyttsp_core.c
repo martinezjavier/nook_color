@@ -305,7 +305,7 @@ static void cyttsp_report_tchdata(struct cyttsp *ts)
 	bitmap_zero(used, CY_MAX_ID);
 
 	for (i = 0; i < num_tch; i++) {
-		tch = cyttsp_get_tch(xy_data, ids[i]);
+		tch = cyttsp_get_tch(xy_data, i);
 
 		input_mt_slot(input, ids[i]);
 		input_mt_report_slot_state(input, MT_TOOL_FINGER, true);
