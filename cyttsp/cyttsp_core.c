@@ -226,8 +226,6 @@ static int cyttsp_soft_reset(struct cyttsp *ts)
 	INIT_COMPLETION(ts->bl_ready);
 	ts->state = CY_BL_STATE;
 
-	enable_irq(ts->irq);
-
 	retval = ttsp_send_command(ts, CY_SOFT_RESET_MODE);
 	if (retval)
 		goto out;
@@ -585,8 +583,6 @@ struct cyttsp *cyttsp_probe(const struct cyttsp_bus_ops *bus_ops,
 	error = cyttsp_power_on(ts);
 	if (error)
 		goto err_free_irq;
-
-	disable_irq(ts->irq);
 
 	error = input_register_device(input_dev);
 	if (error) {
